@@ -32,8 +32,13 @@ class Backup extends Command
      */
     public function handle()
     {
-        $config = json_decode(file_get_contents(base_path('.blacksmith/config.json')), true);
-        $path = 'blacksmith_backups/'.date('Y-m-d-H-i').'-'.$config['project'].'-backup.zip';
+        if (is_null(config('blacksmith.project'))) {
+            $this->error('Please set the project name in the blacksmith config file.');
+
+            return 1;
+        }
+
+        $path = 'blacksmith_backups/'.date('Y-m-d-H-i').'-'.config('blacksmith.project').'-backup.zip';
         $rootPath = base_path('.blacksmith');
 
         $zip = new ZipArchive();

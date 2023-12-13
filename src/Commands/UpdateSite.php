@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Laravel\Forge\Forge;
+use Illuminate\Support\Str;
 use Illuminate\Console\Command;
 
 class UpdateSite extends Command
@@ -12,14 +13,14 @@ class UpdateSite extends Command
      *
      * @var string
      */
-    protected $signature = 'blacksmith:update-site {environment}';
+    protected $signature = 'blacksmith:update-site {--server=} {--site=}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Update the configuration of the Forge server.';
+    protected $description = 'Update the configuration of a Forge site.';
 
     /**
      * Execute the console command.
@@ -29,99 +30,100 @@ class UpdateSite extends Command
     public function handle()
     {
         $forge = new Forge(config('blacksmith.forge_token'));
-        $config = json_decode(file_get_contents(base_path('.blacksmith/config.json')), true);
+        $serverIds = [$this->option('server')];
 
-        $serverId = $config['server'];
-        $siteId = $config['site'];
-
-        $server = $forge->server($serverId);
-        $server->enableOPCache();
-
-        // create new site
-        $forge->setTimeout(120)->updateSite($serverId, $siteId, [
-            "domain" => $config['domain'],
-            "php_version" => $config['php_version'],
-        ], true);
-        $this->info('Site updated');
-
-        // Handle Repository
-        if (isset($config['repository'])) {
-            $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
-            $this->info('Site Repository updated.');
+        if (! $this->option('server')) {
+            $serverIds = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+                return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
+            })->toArray();
         }
 
-        // handling environment files
-        $forge->updateSiteEnvironmentFile($serverId, $siteId, file_get_contents(base_path('.blacksmith/'.$config['environment_variables_file'].'.'.$this->argument('environment'))));
-        $this->info('Site environment done.');
+        foreach ($serverIds as $serverId) {
+            $basePath = base_path('.blacksmith/'.$serverId.'/');
+            $config = json_decode(file_get_contents($basePath.'config.json'), true);
+            $siteConfigs = $config['sites'];
 
-        // handling cron jobs
-        // if ($config['scheduler_enabled']) {
-        //     $forge->createJob($serverId, [
-        //         "command" => "php /home/forge/{$config['domain']}/artisan schedule:run",
-        //         "frequency" => "custom",
-        //         "user" => "forge",
-        //         "minute" => "*",
-        //         "hour" => "*",
-        //         "day" => "*",
-        //         "month" => "*",
-        //         "weekday" => "*"
-        //     ], false);
-        //     $this->info('Cron jobs done.');
-        // }
-
-        // handling deployment script
-        $forge->updateSiteDeploymentScript($serverId, $siteId, file_get_contents(base_path('.blacksmith/'.$config['deployment_file'].'.'.$this->argument('environment'))));
-        $this->info('Deployment script done.');
-
-        // Handling workers
-        if (isset($config['workers'])) {
-            $this->info('Removing old workers.');
-            foreach ($forge->workers($serverId, $siteId) as $worker) {
-                $forge->deleteWorker($serverId, $siteId, $worker->id);
+            if ($this->option('site')) {
+                $config = collect($config['sites'])->where('id', $this->option('site'))->first();
+                $siteConfigs = ['sites' => $config];
             }
 
-            foreach ($config['workers'] as $options) {
-                $forge->createWorker($serverId, $siteId, $options, false);
+            foreach ($siteConfigs as $config) {
+                $siteId = $config['id'];
+                $site = $forge->site($serverId, $siteId);
+
+                if ($config['php_version'] !== $site->phpVersion) {
+                    $site->changePHPVersion($config['php_version']);
+                }
+
+                // create new site
+                $forge->setTimeout(120)->updateSite($serverId, $siteId, [
+                    "domain" => $config['domain'],
+                    "php_version" => $config['php_version'],
+                    "directory" => $config['directory'],
+                ], true);
+
+                $this->info('Site updated');
+
+                // Handle Repository
+                if (isset($config['repository'])) {
+                    $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
+                    $this->info('Site Repository updated.');
+                }
+
+                // handling environment files
+                if (! empty(file_get_contents($basePath.$config['environment_variables_file']))) {
+                    $forge->updateSiteEnvironmentFile($serverId, $siteId, file_get_contents($basePath.$config['environment_variables_file']));
+                    $this->info('Site environment done.');
+                }
+
+                // handling deployment script
+                $forge->updateSiteDeploymentScript($serverId, $siteId, file_get_contents($basePath.$config['deployment_file']));
+                $this->info('Deployment script done.');
+
+                // Handling workers
+                if (isset($config['workers'])) {
+                    $this->info('Removing old workers.');
+                    foreach ($forge->workers($serverId, $siteId) as $worker) {
+                        $forge->deleteWorker($serverId, $siteId, $worker->id);
+                    }
+
+                    foreach ($config['workers'] as $options) {
+                        $forge->createWorker($serverId, $siteId, $options, false);
+                    }
+
+                    $this->info('Workers updated.');
+                }
+
+                // Handle Quick Deploy
+                if ($config['enable_quick_deploy']) {
+                    $forge->enableQuickDeploy($serverId, $siteId);
+                    $this->info('Quick deploy done.');
+                }
+
+                // Handle Security
+                if (isset($config['security'])) {
+                    foreach ($forge->securityRules($serverId, $siteId) as $rule) {
+                        $forge->deleteSecurityRule($serverId, $siteId, $rule->id);
+                    }
+
+                    $forge->createSecurityRule($serverId, $siteId, $config['security']);
+                    $this->info('Security updated.');
+                }
+
+                // Handle Redirects
+                if (isset($config['redirects'])) {
+                    foreach ($forge->redirectRules($serverId, $siteId) as $rule) {
+                        $forge->deleteRedirectRule($serverId, $siteId, $rule->id);
+                    }
+
+                    foreach ($config['redirects'] as $redirect) {
+                        $forge->createRedirectRule($serverId, $siteId, $redirect, false);
+                    }
+
+                    $this->info('Redirects updated.');
+                }
             }
-
-            $this->info('Workers updated.');
-        }
-
-        // Handle SSL
-        // if ($config['lets_encrypt']) {
-        //     $forge->obtainLetsEncryptCertificate($serverId, $siteId, [
-        //         'domains' => $config['domains'],
-        //     ], false);
-        //     $this->info('SSL done.');
-        // }
-
-        // Handle Quick Deploy
-        if ($config['enable_quick_deploy']) {
-            $forge->enableQuickDeploy($serverId, $siteId);
-            $this->info('Quick deploy done.');
-        }
-
-        // Handle Security
-        if (isset($config['security'])) {
-            foreach ($forge->securityRules($serverId, $siteId) as $rule) {
-                $forge->deleteSecurityRule($serverId, $siteId, $rule->id);
-            }
-
-            $forge->createSecurityRule($serverId, $siteId, $config['security']);
-            $this->info('Security updated.');
-        }
-
-        // Handle Redirects
-        if (isset($config['redirects'])) {
-            foreach ($forge->redirectRules($serverId, $siteId) as $rule) {
-                $forge->deleteRedirectRule($serverId, $siteId, $rule->id);
-            }
-
-            foreach ($config['redirects'] as $redirect) {
-                $forge->createRedirectRule($serverId, $siteId, $redirect, false);
-            }
-
-            $this->info('Redirects updated.');
         }
 
         return 0;
