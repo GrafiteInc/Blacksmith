@@ -22,13 +22,12 @@ class SetupTest extends TestCase
         // $this->markTestIncomplete('Not sure how to test yet.');
 
         Artisan::call('blacksmith:setup', [
-            'domain' => 'test.com',
-            '--project' => 'test',
+            '--domain' => 'test.com',
         ]);
 
         $this->assertTrue(file_exists(base_path('.blacksmith/config.json')));
-        $this->assertTrue(file_exists(base_path('.blacksmith/.env.production')));
-        $this->assertTrue(file_exists(base_path('.blacksmith/.deploy.production')));
+        $this->assertTrue(file_exists(base_path('.blacksmith/test.com.env')));
+        $this->assertTrue(file_exists(base_path('.blacksmith/test.com.deploy')));
 
         @array_map('unlink', glob(base_path('.blacksmith')."/*"));
         @array_map('unlink', glob(base_path('.blacksmith')."/.*"));
