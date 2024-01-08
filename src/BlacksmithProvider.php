@@ -9,6 +9,7 @@ use Grafite\Blacksmith\Commands\Localize;
 use Grafite\Blacksmith\Commands\BuildSite;
 use Grafite\Blacksmith\Commands\UpdateSite;
 use Grafite\Blacksmith\Commands\BuildServer;
+use Grafite\Blacksmith\Commands\UpdateServer;
 
 class BlacksmithProvider extends ServiceProvider
 {
@@ -38,6 +39,7 @@ class BlacksmithProvider extends ServiceProvider
             BuildSite::class,
             Localize::class,
             UpdateSite::class,
+            UpdateServer::class,
         ]);
     }
 }
