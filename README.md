@@ -20,7 +20,7 @@ The Backsmith package is a easy to use tool for handling long term projects on L
 
 | Laravel Version | Package Tag | Supported |
 |-----------------|-------------|-----------|
-| ^10.x | 1.x | yes |
+| ^11.x | 1.x | yes |
 
 ### Installation
 
