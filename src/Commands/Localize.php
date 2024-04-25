@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Laravel\Forge\Forge;
+use Illuminate\Support\Str;
 use Illuminate\Console\Command;
 
 class Localize extends Command
@@ -30,6 +31,7 @@ class Localize extends Command
     {
         $forge = new Forge(config('blacksmith.forge_token'));
         $basePath = base_path('.blacksmith');
+        $config = null;
 
         if (file_exists($basePath.'/config.json')) {
             $config = json_decode(file_get_contents($basePath.'/config.json'), true);
@@ -45,6 +47,18 @@ class Localize extends Command
         if ($this->option('server') && file_exists(base_path('.blacksmith/'.$this->option('server').'/config.json'))) {
             $config = json_decode(file_get_contents(base_path('.blacksmith/'.$this->option('server').'/config.json')), true);
             $basePath = base_path('.blacksmith/'.$this->option('server'));
+        }
+
+        if (is_null($config)) {
+            $serverIds = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+                return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
+            })->toArray();
+
+            if (count($serverIds) === 1) {
+                $config = json_decode(file_get_contents(base_path('.blacksmith/'.$serverIds[0].'/config.json')), true);
+
+                $basePath = base_path('.blacksmith/'.$serverIds[0]);
+            }
         }
 
         throw_if(is_null($config), new \Exception('No configuration found. Run php artisan blacksmith:setup'));

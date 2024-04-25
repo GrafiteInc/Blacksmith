@@ -98,11 +98,13 @@ class Setup extends Command
                             {
                                 "name": "",
                                 "path": "",
-                                "credentials": {
-                                    "username" : "",
-                                    "password" : ""
-                                }
-                            },
+                                "credentials": [
+                                    {
+                                        "username" : "",
+                                        "password" : ""
+                                    }
+                                ]
+                            }
                         ],
                         "redirects" : [
                             {
