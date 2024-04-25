@@ -80,8 +80,8 @@ class Setup extends Command
                         },
                         "environment_variables_file": "{$domain}.env",
                         "deployment_file": "{$domain}.deploy",
-                        "workers": {
-                            "default" : {
+                        "workers": [
+                            {
                                 "connection" : "database",
                                 "queue" : "default",
                                 "tries": 1,
@@ -93,15 +93,17 @@ class Setup extends Command
                                 "daemon": true,
                                 "php_version": "php"
                             }
-                        },
-                        "security": {
-                            "name": "",
-                            "path": "",
-                            "credentials": {
-                                "username" : "",
-                                "password" : ""
-                            }
-                        },
+                        ],
+                        "security": [
+                            {
+                                "name": "",
+                                "path": "",
+                                "credentials": {
+                                    "username" : "",
+                                    "password" : ""
+                                }
+                            },
+                        ],
                         "redirects" : [
                             {
                                 "from" : "",

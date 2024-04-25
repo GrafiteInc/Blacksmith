@@ -63,7 +63,7 @@ class BuildSite extends Command
                     "environment_variables_file" => "{$domain}.env",
                     "deployment_file" => "{$domain}.deploy",
                     "workers" => [
-                        "default"  => [
+                        [
                             "connection"  => "database",
                             "queue"  => "default",
                             "tries" => 1,
@@ -77,11 +77,13 @@ class BuildSite extends Command
                         ]
                     ],
                     "security" => [
-                        "name" => "",
-                        "path" => "",
-                        "credentials" => [
-                            "username" => "",
-                            "password" => ""
+                        [
+                            "name" => "",
+                            "path" => "",
+                            "credentials" => [
+                                "username" => "",
+                                "password" => ""
+                            ]
                         ]
                     ],
                     "redirects"  => [
@@ -201,7 +203,10 @@ class BuildSite extends Command
 
             // Handle Security
             if (isset($siteConfig['security'])) {
-                $forge->createSecurityRule($serverId, $siteId, $siteConfig['security']);
+                foreach ($siteConfig['security'] as $security) {
+                    $forge->createSecurityRule($serverId, $siteId, $security);
+                }
+
                 $this->info('Security done.');
             }
 

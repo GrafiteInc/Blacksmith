@@ -47,6 +47,8 @@ class Localize extends Command
             $basePath = base_path('.blacksmith/'.$this->option('server'));
         }
 
+        throw_if(is_null($config), new \Exception('No configuration found. Run php artisan blacksmith:setup'));
+
         $serverId = $config['server']['id'];
 
         $server = $forge->server($serverId);

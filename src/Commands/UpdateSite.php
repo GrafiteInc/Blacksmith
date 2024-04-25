@@ -107,7 +107,10 @@ class UpdateSite extends Command
                         $forge->deleteSecurityRule($serverId, $siteId, $rule->id);
                     }
 
-                    $forge->createSecurityRule($serverId, $siteId, $config['security']);
+                    foreach ($config['security'] as $security) {
+                        $forge->createSecurityRule($serverId, $siteId, $security);
+                    }
+
                     $this->info('Security updated.');
                 }
 
