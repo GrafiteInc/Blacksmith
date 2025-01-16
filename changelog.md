@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v1.3.0] - 2025-01-16
+
+### Added
+- Worker managers
+- Maintenance managers
+- Deploy trigger
+
 ## [v1.2.1] - 2024-04-25
 
 ### Fixed
