@@ -98,13 +98,28 @@ class Localize extends Command
                 'composer' => false,
             ];
 
-
             $sites[$key]['environment_variables_file'] = $site->name.'.env';
             $sites[$key]['deployment_file'] = $site->name.'.deploy';
-
             $sites[$key]['workers'] = null;
             $sites[$key]['security'] = null;
             $sites[$key]['redirects'] = null;
+
+            // If workers build them
+            $workers = $forge->workers($serverId, $site->id);
+
+            foreach ($workers as $worker) {
+                $sites[$key]['workers'][] = [
+                    'connection' => $worker->connection,
+                    'queue' => $worker->queue,
+                    'timeout' => $worker->timeout,
+                    'processes' => $worker->processes,
+                    'tries' => $worker->tries,
+                    'sleep' => $worker->sleep,
+                    'daemon' => $worker->daemon,
+                    'stopwaitsecs' => $worker->stopwaitsecs,
+                    'php_version' => $site->phpVersion,
+                ];
+            }
 
             // handling environment files
             $environment = $forge->siteEnvironmentFile($config['server']['id'], $site->id);
