@@ -39,7 +39,7 @@ class Localize extends Command
 
         if ($this->option('server') && ! file_exists(base_path('.blacksmith/'.$this->option('server').'/config.json'))) {
             $this->info('Server does not exist in your local blacksmith configuration.');
-            $this->info('php artisan blacksmith:setup --server='.$this->option('server'));
+            $this->info('php artisan blacksmith:setup --server='.$this->option('server').' --site=###');
 
             return 0;
         }

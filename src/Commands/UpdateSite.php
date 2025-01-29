@@ -66,7 +66,7 @@ class UpdateSite extends Command
                 $this->info('Site updated');
 
                 // Handle Repository
-                if (isset($config['repository'])) {
+                if (isset($config['repository']) && ! is_null($config['repository'])) {
                     $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
                     $this->info('Site Repository updated.');
                 }
@@ -102,7 +102,7 @@ class UpdateSite extends Command
                 }
 
                 // Handle Security
-                if (isset($config['security'])) {
+                if (isset($config['security']) && ! is_null($config['security'])) {
                     foreach ($forge->securityRules($serverId, $siteId) as $rule) {
                         $forge->deleteSecurityRule($serverId, $siteId, $rule->id);
                     }
@@ -115,7 +115,7 @@ class UpdateSite extends Command
                 }
 
                 // Handle Redirects
-                if (isset($config['redirects'])) {
+                if (isset($config['redirects']) && ! is_null($config['redirects'])) {
                     foreach ($forge->redirectRules($serverId, $siteId) as $rule) {
                         $forge->deleteRedirectRule($serverId, $siteId, $rule->id);
                     }

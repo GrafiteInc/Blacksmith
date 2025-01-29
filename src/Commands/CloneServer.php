@@ -8,14 +8,14 @@ use Illuminate\Console\Command;
 use Laravel\Forge\Resources\ServerTypes;
 use Laravel\Forge\Resources\ServerProviders;
 
-class BuildServer extends Command
+class CloneServer extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:build-server {ip} {--name=} {--ubuntu=} {--php=} {--private_ip=}';
+    protected $signature = 'blacksmith:clone-server {id} {ip} {--private_ip=}';
 
     /**
      * The console command description.
@@ -33,14 +33,17 @@ class BuildServer extends Command
     {
         $forge = new Forge(config('blacksmith.forge_token'));
 
+        // Get the config
+        $config = json_decode(file_get_contents(base_path('.blacksmith/'.$this->argument('id').'/config.json'), true));
+
         // Handle Server Build
         $server = $forge->setTimeout(120)->createServer([
-            "ubuntu_version" => $this->option('ubuntu') ?? '22.04',
+            "ubuntu_version" => $config['server']['ubuntu_version'] ?? '24.04',
             "provider" => ServerProviders::CUSTOM,
             "name" => $this->option('name') ?? 'server-'.Str::random(10),
             "type" => ServerTypes::APP,
-            "php_version"=> $this->option('php') ?? 'php82',
-            "php_cli_version"=> $this->option('php') ?? 'php82',
+            "php_version"=> $config['server']['ubuntu_version'] ?? 'php83',
+            "php_cli_version"=> $config['server']['ubuntu_version'] ?? 'php83',
             "max_upload_size"=> '5',
             "max_execution_time"=> '30',
             "ip_address" => $this->argument('ip'),
@@ -77,7 +80,7 @@ class BuildServer extends Command
 
         $this->info('Server Creation initialized.');
         $this->info('Please run the provision command on the server.');
-        $this->info('Then wait approximately 10 minutes before building the site.');
+        $this->info('Please wait approximately 10 minutes before building the site.');
         $this->info('You can check the progress here: https://forge.laravel.com/servers/'.$server->id);
 
         return 0;
