@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v1.4.0] - 2025-01-29
+
+### Added
+- Ablity to quickly clone a server
+
 ## [v1.3.0] - 2025-01-16
 
 ### Added
