@@ -76,7 +76,7 @@ class BuildServer extends Command
         file_put_contents(base_path('.blacksmith/'.$server->id.'/provision.txt'), $contents);
 
         $this->info('Server Creation initialized.');
-        $this->info('Please run the provision command on the server.');
+        $this->info('Please run the provision command on the server: '.base_path('.blacksmith/'.$server->id.'/provision.txt'));
         $this->info('Then wait approximately 10 minutes before building the site.');
         $this->info('You can check the progress here: https://forge.laravel.com/servers/'.$server->id);
 

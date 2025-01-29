@@ -16,6 +16,7 @@ use Grafite\Blacksmith\Commands\DeploySite;
 use Grafite\Blacksmith\Commands\UpdateSite;
 use Grafite\Blacksmith\Commands\AddSecurity;
 use Grafite\Blacksmith\Commands\BuildServer;
+use Grafite\Blacksmith\Commands\CloneServer;
 use Grafite\Blacksmith\Commands\WorkersDown;
 use Grafite\Blacksmith\Commands\WorkersList;
 use Grafite\Blacksmith\Commands\AddRedirects;
@@ -48,6 +49,7 @@ class BlacksmithProvider extends ServiceProvider
             Setup::class,
             Backup::class,
             BuildServer::class,
+            CloneServer::class,
             BuildSite::class,
             Localize::class,
             UpdateSite::class,

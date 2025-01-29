@@ -63,27 +63,29 @@ class UpdateSite extends Command
                     "directory" => $config['directory'],
                 ], true);
 
-                $this->info('Site updated');
+                $this->info($config['domain'].': Site updated');
 
                 // Handle Repository
-                if (isset($config['repository']) && ! is_null($config['repository'])) {
+                if (isset($config['repository']) && ! is_null($config['repository']['repository'])) {
                     $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
-                    $this->info('Site Repository updated.');
+                    $this->info($config['domain'].': Site Repository updated.');
                 }
 
                 // handling environment files
                 if (! empty(file_get_contents($basePath.$config['environment_variables_file']))) {
                     $forge->updateSiteEnvironmentFile($serverId, $siteId, file_get_contents($basePath.$config['environment_variables_file']));
-                    $this->info('Site environment done.');
+                    $this->info($config['domain'].': Site environment done.');
                 }
 
                 // handling deployment script
-                $forge->updateSiteDeploymentScript($serverId, $siteId, file_get_contents($basePath.$config['deployment_file']));
-                $this->info('Deployment script done.');
+                if (! empty(file_get_contents($basePath.$config['deployment_file']))) {
+                    $forge->updateSiteDeploymentScript($serverId, $siteId, file_get_contents($basePath.$config['deployment_file']));
+                    $this->info($config['domain'].': Deployment script done.');
+                }
 
                 // Handling workers
                 if (isset($config['workers'])) {
-                    $this->info('Removing old workers.');
+                    $this->info($config['domain'].': Removing old workers.');
                     foreach ($forge->workers($serverId, $siteId) as $worker) {
                         $forge->deleteWorker($serverId, $siteId, $worker->id);
                     }
@@ -92,13 +94,13 @@ class UpdateSite extends Command
                         $forge->createWorker($serverId, $siteId, $options, false);
                     }
 
-                    $this->info('Workers updated.');
+                    $this->info($config['domain'].': Workers updated.');
                 }
 
                 // Handle Quick Deploy
                 if ($config['enable_quick_deploy']) {
                     $forge->enableQuickDeploy($serverId, $siteId);
-                    $this->info('Quick deploy done.');
+                    $this->info($config['domain'].': Quick deploy done.');
                 }
 
                 // Handle Security
@@ -111,7 +113,7 @@ class UpdateSite extends Command
                         $forge->createSecurityRule($serverId, $siteId, $security);
                     }
 
-                    $this->info('Security updated.');
+                    $this->info($config['domain'].': Security updated.');
                 }
 
                 // Handle Redirects
@@ -124,7 +126,7 @@ class UpdateSite extends Command
                         $forge->createRedirectRule($serverId, $siteId, $redirect, false);
                     }
 
-                    $this->info('Redirects updated.');
+                    $this->info($config['domain'].': Redirects updated.');
                 }
             }
         }
