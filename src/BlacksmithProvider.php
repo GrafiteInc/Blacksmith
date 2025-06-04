@@ -22,6 +22,7 @@ use Grafite\Blacksmith\Commands\WorkersList;
 use Grafite\Blacksmith\Commands\AddRedirects;
 use Grafite\Blacksmith\Commands\UpdateServer;
 use Grafite\Blacksmith\Commands\WorkersReset;
+use Grafite\Blacksmith\Commands\WorkersRestart;
 use Grafite\Blacksmith\Commands\SiteWorkersClear;
 
 class BlacksmithProvider extends ServiceProvider
@@ -60,6 +61,7 @@ class BlacksmithProvider extends ServiceProvider
             WorkersDown::class,
             WorkersUp::class,
             WorkersReset::class,
+            WorkersRestart::class,
             WorkersList::class,
             SiteDown::class,
             SiteUp::class,
