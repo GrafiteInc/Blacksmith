@@ -5,10 +5,8 @@ namespace Grafite\Blacksmith\Commands;
 use Laravel\Forge\Forge;
 use Illuminate\Support\Str;
 use Illuminate\Console\Command;
-use SebastianBergmann\Type\TrueType;
 use Laravel\Forge\Resources\ServerTypes;
 use Laravel\Forge\Resources\ServerProviders;
-use Illuminate\Validation\ValidationException;
 use Laravel\Forge\Resources\InstallableServices;
 
 class CloneServer extends Command
@@ -25,7 +23,7 @@ class CloneServer extends Command
      *
      * @var string
      */
-    protected $description = 'Set up a Forge server and create a blacksmith configuration file based on it.';
+    protected $description = 'Clone an existing server on Forge using a blacksmith configuration.';
 
     /**
      * Execute the console command.
@@ -46,11 +44,11 @@ class CloneServer extends Command
             "ubuntu_version" => $config->server->ubuntu_version ?? '24.04',
             "provider" => ServerProviders::CUSTOM,
             "name" => $config->server->name.'-Copy' ?? 'server-'.Str::random(10),
-            "type" => ServerTypes::APP,
-            "php_version"=> $config->server->php_version ?? 'php83',
-            "php_cli_version"=> $config->server->php_version ?? 'php83',
-            "max_upload_size"=> '5',
-            "max_execution_time"=> '30',
+            "type" => $config->server->type ?? ServerTypes::APP,
+            "php_version"=> $config->server->php_version ?? 'php84',
+            "php_cli_version"=> $config->server->php_version ?? 'php84',
+            "max_upload_size"=> $config->server->max_upload_size ?? '128',
+            "max_execution_time"=> $config->server->max_upload_size ?? '90',
             "database_type" => InstallableServices::MYSQL_8,
             "ip_address" => $this->argument('ip'),
             "private_ip_address" => $this->option('private_ip'),

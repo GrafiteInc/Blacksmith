@@ -53,19 +53,20 @@ class Setup extends Command
                 "server": {
                     "id": "$server",
                     "name": "$name",
+                    "type": "",
                     "ip_address": "",
                     "private_ip_address": "",
-                    "php_version": "php82",
-                    "php_cli_version": "php82",
+                    "php_version": "php84",
+                    "php_cli_version": "php84",
                     "max_upload_size": 5,
                     "max_execution_time": 30,
                     "opcache_enabled": true,
-                    "ubuntu_version": "22.04"
+                    "ubuntu_version": "24.04"
                 },
                 "sites": [
                     {
                         "id": "{$site}",
-                        "php_version": "php82",
+                        "php_version": "php84",
                         "domain": "{$domain}",
                         "directory": "/public",
                         "lets_encrypt": true,
@@ -123,7 +124,9 @@ class Setup extends Command
 
         // Add .blacksmith to .gitignore
         $gitignoreContents = file_get_contents(base_path('.gitignore'));
-        $gitignoreContents .= "\n.blacksmith";
+        if (! Str::of($gitignoreContents)->contains('/.blacksmith')) {
+            $gitignoreContents .= "\n/.blacksmith";
+        }
         file_put_contents(base_path('.gitignore'), $gitignoreContents);
 
         if ($domain !== 'domain') {

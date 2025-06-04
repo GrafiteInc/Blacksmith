@@ -69,6 +69,7 @@ class Localize extends Command
 
         $config['server']['id'] = $server->id;
         $config['server']['name'] = $server->name;
+        $config['server']['type'] = $server->type;
         $config['server']['ubuntu_version'] = $server->ubuntuVersion;
         $config['server']['ip_address'] = $server->ipAddress;
         $config['server']['private_ip_address'] = $server->privateIpAddress;
@@ -103,6 +104,7 @@ class Localize extends Command
             $sites[$key]['workers'] = null;
             $sites[$key]['security'] = null;
             $sites[$key]['redirects'] = null;
+            $sites[$key]['balancing'] = null;
 
             // If workers build them
             $workers = $forge->workers($serverId, $site->id);
@@ -119,6 +121,46 @@ class Localize extends Command
                     'stopwaitsecs' => $worker->stopwaitsecs,
                     'php_version' => $site->phpVersion,
                 ];
+            }
+
+            // If security rules build them
+            $security = $forge->securityRules($serverId, $site->id);
+
+            if (count($security) > 0) {
+                foreach ($security as $rule) {
+                    $sites[$key]['security'][] = [
+                        'type' => $rule->type,
+                        'value' => $rule->value,
+                    ];
+                }
+            }
+
+            // If redirects build them
+            $redirects = $forge->redirectRules($serverId, $site->id);
+
+            if (count($redirects) > 0) {
+                foreach ($redirects as $redirect) {
+                    $sites[$key]['redirects'][] = [
+                        'from' => $redirect->from,
+                        'to' => $redirect->to,
+                        'code' => $redirect->code,
+                    ];
+                }
+            }
+
+            // If balancing build them
+            $balancing = $forge->get('servers/'.$serverId.'/sites/'.$site->id.'/balancing') ?? [];
+
+            if (count($balancing['nodes']) > 0) {
+                foreach ($balancing['nodes'] as $balance) {
+                    $sites[$key]['balancing'][] = [
+                        'server_id' => $balance['server_id'],
+                        'weight' => $balance['weight'],
+                        'down' => $balance['down'],
+                        'backup' => $balance['backup'],
+                        'port' => $balance['port'],
+                    ];
+                }
             }
 
             // handling environment files

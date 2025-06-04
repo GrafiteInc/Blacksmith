@@ -15,7 +15,7 @@ class BuildServer extends Command
      *
      * @var string
      */
-    protected $signature = 'blacksmith:build-server {ip} {--name=} {--ubuntu=} {--php=} {--private_ip=}';
+    protected $signature = 'blacksmith:build-server {ip} {--name=} {--ubuntu=} {--type=} {--php=} {--private_ip=}';
 
     /**
      * The console command description.
@@ -35,12 +35,12 @@ class BuildServer extends Command
 
         // Handle Server Build
         $server = $forge->setTimeout(120)->createServer([
-            "ubuntu_version" => $this->option('ubuntu') ?? '22.04',
+            "ubuntu_version" => $this->option('ubuntu') ?? '24.04',
             "provider" => ServerProviders::CUSTOM,
             "name" => $this->option('name') ?? 'server-'.Str::random(10),
-            "type" => ServerTypes::APP,
-            "php_version"=> $this->option('php') ?? 'php82',
-            "php_cli_version"=> $this->option('php') ?? 'php82',
+            "type" => $this->option('type') ?? ServerTypes::APP,
+            "php_version"=> $this->option('php') ?? 'php84',
+            "php_cli_version"=> $this->option('php') ?? 'php84',
             "max_upload_size"=> '5',
             "max_execution_time"=> '30',
             "ip_address" => $this->argument('ip'),
@@ -58,6 +58,7 @@ class BuildServer extends Command
             "server" => [
                 "id" => $server->id,
                 "name" => $server->name,
+                "type" => $server->type,
                 "ip_address" => $this->argument('ip'),
                 "private_ip_address" => $this->option('private_ip') ?? null,
                 "php_version" => $server->phpVersion,

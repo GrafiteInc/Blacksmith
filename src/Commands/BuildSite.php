@@ -47,7 +47,7 @@ class BuildSite extends Command
                 $domain = $this->ask('What is the domain of the site?');
 
                 $config['sites'][] = [
-                    "php_version" => "php82",
+                    "php_version" => "php84",
                     "domain" => "{$domain}",
                     "directory" => "/public",
                     "lets_encrypt" => true,
@@ -136,7 +136,7 @@ class BuildSite extends Command
                 "domain" => $siteConfig['domain'],
                 "project_type" => "php",
                 "directory" => $siteConfig['directory'] ?? "/public",
-                "isolated" => true,
+                "isolated" => false,
                 "php_version" => $siteConfig['php_version'],
             ], true);
 
