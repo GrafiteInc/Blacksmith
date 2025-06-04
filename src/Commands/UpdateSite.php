@@ -40,11 +40,11 @@ class UpdateSite extends Command
 
         foreach ($serverIds as $serverId) {
             $basePath = base_path('.blacksmith/'.$serverId.'/');
-            $config = json_decode(file_get_contents($basePath.'config.json'), true);
-            $siteConfigs = $config['sites'];
+            $serverConfig = json_decode(file_get_contents($basePath.'config.json'), true);
+            $siteConfigs = $serverConfig['sites'];
 
             if ($this->option('site')) {
-                $config = collect($config['sites'])->where('id', $this->option('site'))->first();
+                $config = collect($serverConfig['sites'])->where('id', $this->option('site'))->first();
                 $siteConfigs = ['sites' => $config];
             }
 
@@ -52,7 +52,7 @@ class UpdateSite extends Command
                 $siteId = $config['id'];
                 $site = $forge->site($serverId, $siteId);
 
-                if ($config['php_version'] !== $site->phpVersion) {
+                if ($config['php_version'] !== $site->phpVersion && $serverConfig['server']['type'] != "loadbalancer") {
                     $site->changePHPVersion($config['php_version']);
                 }
 
@@ -127,6 +127,28 @@ class UpdateSite extends Command
                     }
 
                     $this->info($config['domain'].': Redirects updated.');
+                }
+
+                // Handle Load Balancing
+                if (isset($config['balancing']) && ! is_null($config['balancing'])) {
+                    $balanceConfig = collect($config['balancing'])->map(function ($balance) {
+                        return [
+                            'id' => $balance['server_id'],
+                            'weight' => $balance['weight'],
+                            'down' => $balance['down'] ?? false,
+                            'backup' => $balance['backup'] ?? false,
+                            'port' => $balance['port'] ?? 80,
+                        ];
+                    })->toArray();
+
+                    $data = [
+                        'servers' => $balanceConfig,
+                        'method' => $config['balancing_type'] ?? 'round-robin',
+                    ];
+
+                    $forge->updateNodeBalancingConfiguration($serverId, $siteId, $data);
+
+                    $this->info($config['domain'].': Load balancing updated.');
                 }
             }
         }
