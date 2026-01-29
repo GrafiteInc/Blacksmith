@@ -2,9 +2,9 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 
 class WorkersUp extends Command
 {
@@ -33,7 +33,7 @@ class WorkersUp extends Command
         $serverIds = [$this->option('server')];
 
         if (! $this->option('server')) {
-            $serverIds = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
                 return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
             })->toArray();
         }

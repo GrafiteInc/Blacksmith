@@ -2,12 +2,12 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
-use Laravel\Forge\Resources\ServerTypes;
-use Laravel\Forge\Resources\ServerProviders;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\InstallableServices;
+use Laravel\Forge\Resources\ServerProviders;
+use Laravel\Forge\Resources\ServerTypes;
 
 class CloneServer extends Command
 {
@@ -41,17 +41,17 @@ class CloneServer extends Command
         $this->info('Server Creation initialized.');
 
         $server = $forge->setTimeout(120)->createServer([
-            "ubuntu_version" => $config->server->ubuntu_version ?? '24.04',
-            "provider" => ServerProviders::CUSTOM,
-            "name" => $config->server->name.'-Copy' ?? 'server-'.Str::random(10),
-            "type" => $config->server->type ?? ServerTypes::APP,
-            "php_version"=> $config->server->php_version ?? 'php84',
-            "php_cli_version"=> $config->server->php_version ?? 'php84',
-            "max_upload_size"=> $config->server->max_upload_size ?? '128',
-            "max_execution_time"=> $config->server->max_upload_size ?? '90',
-            "database_type" => InstallableServices::MYSQL_8,
-            "ip_address" => $this->argument('ip'),
-            "private_ip_address" => $this->option('private_ip'),
+            'ubuntu_version' => $config->server->ubuntu_version ?? '24.04',
+            'provider' => ServerProviders::CUSTOM,
+            'name' => $config->server->name.'-Copy' ?? 'server-'.Str::random(10),
+            'type' => $config->server->type ?? ServerTypes::APP,
+            'php_version' => $config->server->php_version ?? 'php84',
+            'php_cli_version' => $config->server->php_version ?? 'php84',
+            'max_upload_size' => $config->server->max_upload_size ?? '128',
+            'max_execution_time' => $config->server->max_upload_size ?? '90',
+            'database_type' => InstallableServices::MYSQL_8,
+            'ip_address' => $this->argument('ip'),
+            'private_ip_address' => $this->option('private_ip'),
         ]);
 
         if (! is_dir(base_path('.blacksmith'))) {
@@ -62,16 +62,16 @@ class CloneServer extends Command
         touch(base_path('.blacksmith/'.$server->id.'/config.json'));
 
         file_put_contents(base_path('.blacksmith/'.$server->id.'/config.json'), json_encode([
-            "server" => [
-                "id" => $server->id,
-                "name" => $server->name,
-                "ip_address" => $this->argument('ip'),
-                "private_ip_address" => $this->option('private_ip') ?? null,
-                "php_version" => $server->phpVersion,
-                "opcache_enabled" => true,
-                "ubuntu_version" => $server->ubuntuVersion,
+            'server' => [
+                'id' => $server->id,
+                'name' => $server->name,
+                'ip_address' => $this->argument('ip'),
+                'private_ip_address' => $this->option('private_ip') ?? null,
+                'php_version' => $server->phpVersion,
+                'opcache_enabled' => true,
+                'ubuntu_version' => $server->ubuntuVersion,
             ],
-            "sites" => [],
+            'sites' => [],
         ], JSON_PRETTY_PRINT));
 
         $contents = <<<EOT
@@ -81,7 +81,7 @@ class CloneServer extends Command
         EOT;
 
         file_put_contents(base_path('.blacksmith/'.$server->id.'/provision.txt'), $contents);
-        collect(glob(base_path('.blacksmith') . '/'. $this->argument('id') . '/*'))->each(function ($file) use ($server) {
+        collect(glob(base_path('.blacksmith').'/'.$this->argument('id').'/*'))->each(function ($file) use ($server) {
             if (Str::of($file)->endsWith(['.deploy', '.env'])) {
                 $fileName = str_replace($this->argument('id'), $server->id, $file);
                 file_put_contents($fileName, file_get_contents($file));

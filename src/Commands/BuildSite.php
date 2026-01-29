@@ -2,9 +2,9 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 
 class BuildSite extends Command
 {
@@ -33,7 +33,7 @@ class BuildSite extends Command
         $serverId = $this->option('server');
 
         if (! $this->option('server')) {
-            $serverId = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+            $serverId = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
                 return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
             })->first();
         }
@@ -47,52 +47,52 @@ class BuildSite extends Command
                 $domain = $this->ask('What is the domain of the site?');
 
                 $config['sites'][] = [
-                    "php_version" => "php84",
-                    "domain" => "{$domain}",
-                    "directory" => "/public",
-                    "lets_encrypt" => true,
-                    "scheduler_enabled" => true,
-                    "ssl_domains" => ["{$domain}", "www.{$domain}"],
-                    "enable_quick_deploy" => false,
-                    "repository" => [
-                        "provider" => "github",
-                        "repository" => "username/repository",
-                        "branch" => "main",
-                        "composer" => true
+                    'php_version' => 'php84',
+                    'domain' => "{$domain}",
+                    'directory' => '/public',
+                    'lets_encrypt' => true,
+                    'scheduler_enabled' => true,
+                    'ssl_domains' => ["{$domain}", "www.{$domain}"],
+                    'enable_quick_deploy' => false,
+                    'repository' => [
+                        'provider' => 'github',
+                        'repository' => 'username/repository',
+                        'branch' => 'main',
+                        'composer' => true,
                     ],
-                    "environment_variables_file" => "{$domain}.env",
-                    "deployment_file" => "{$domain}.deploy",
-                    "workers" => [
+                    'environment_variables_file' => "{$domain}.env",
+                    'deployment_file' => "{$domain}.deploy",
+                    'workers' => [
                         [
-                            "connection"  => "database",
-                            "queue"  => "default",
-                            "tries" => 1,
-                            "timeout" => 0,
-                            "processes" => 1,
-                            "stopwaitsecs" => 600,
-                            "sleep" => 10,
-                            "force" => false,
-                            "daemon" => true,
-                            "php_version" => "php"
-                        ]
+                            'connection' => 'database',
+                            'queue' => 'default',
+                            'tries' => 1,
+                            'timeout' => 0,
+                            'processes' => 1,
+                            'stopwaitsecs' => 600,
+                            'sleep' => 10,
+                            'force' => false,
+                            'daemon' => true,
+                            'php_version' => 'php',
+                        ],
                     ],
-                    "security" => [
+                    'security' => [
                         [
-                            "name" => "",
-                            "path" => "",
-                            "credentials" => [
-                                "username" => "",
-                                "password" => ""
-                            ]
-                        ]
+                            'name' => '',
+                            'path' => '',
+                            'credentials' => [
+                                'username' => '',
+                                'password' => '',
+                            ],
+                        ],
                     ],
-                    "redirects"  => [
+                    'redirects' => [
                         [
-                            "from"  => "",
-                            "to" => "",
-                            "type" => "permanent"
-                        ]
-                    ]
+                            'from' => '',
+                            'to' => '',
+                            'type' => 'permanent',
+                        ],
+                    ],
                 ];
             }
 
@@ -119,7 +119,7 @@ class BuildSite extends Command
             $config['sites'] = collect($config['sites'])->filter(function ($site) {
                 return $site['id'] == $this->option('site');
             })->toArray();
-        };
+        }
 
         foreach ($config['sites'] as $key => $siteConfig) {
             $basePath = base_path('.blacksmith/'.$serverId.'/');
@@ -133,11 +133,11 @@ class BuildSite extends Command
 
             // create new site
             $site = $forge->setTimeout(120)->createSite($serverId, [
-                "domain" => $siteConfig['domain'],
-                "project_type" => "php",
-                "directory" => $siteConfig['directory'] ?? "/public",
-                "isolated" => false,
-                "php_version" => $siteConfig['php_version'],
+                'domain' => $siteConfig['domain'],
+                'project_type' => 'php',
+                'directory' => $siteConfig['directory'] ?? '/public',
+                'isolated' => false,
+                'php_version' => $siteConfig['php_version'],
             ], true);
 
             $this->info('Site ID: '.$site->id.' created.');
@@ -162,14 +162,14 @@ class BuildSite extends Command
             // handling cron jobs
             if ($siteConfig['scheduler_enabled']) {
                 $forge->createJob($serverId, [
-                    "command" => "{$siteConfig['php_version']} /home/forge/{$siteConfig['domain']}/artisan schedule:run",
-                    "frequency" => "custom",
-                    "user" => "forge",
-                    "minute" => "*",
-                    "hour" => "*",
-                    "day" => "*",
-                    "month" => "*",
-                    "weekday" => "*"
+                    'command' => "{$siteConfig['php_version']} /home/forge/{$siteConfig['domain']}/artisan schedule:run",
+                    'frequency' => 'custom',
+                    'user' => 'forge',
+                    'minute' => '*',
+                    'hour' => '*',
+                    'day' => '*',
+                    'month' => '*',
+                    'weekday' => '*',
                 ], false);
 
                 $this->info('Cron jobs done.');

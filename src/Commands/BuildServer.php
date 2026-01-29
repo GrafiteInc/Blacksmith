@@ -2,11 +2,11 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
-use Laravel\Forge\Resources\ServerTypes;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\ServerProviders;
+use Laravel\Forge\Resources\ServerTypes;
 
 class BuildServer extends Command
 {
@@ -35,16 +35,16 @@ class BuildServer extends Command
 
         // Handle Server Build
         $server = $forge->setTimeout(120)->createServer([
-            "ubuntu_version" => $this->option('ubuntu') ?? '24.04',
-            "provider" => ServerProviders::CUSTOM,
-            "name" => $this->option('name') ?? 'server-'.Str::random(10),
-            "type" => $this->option('type') ?? ServerTypes::APP,
-            "php_version"=> $this->option('php') ?? 'php84',
-            "php_cli_version"=> $this->option('php') ?? 'php84',
-            "max_upload_size"=> '5',
-            "max_execution_time"=> '30',
-            "ip_address" => $this->argument('ip'),
-            "private_ip_address" => $this->option('private_ip'),
+            'ubuntu_version' => $this->option('ubuntu') ?? '24.04',
+            'provider' => ServerProviders::CUSTOM,
+            'name' => $this->option('name') ?? 'server-'.Str::random(10),
+            'type' => $this->option('type') ?? ServerTypes::APP,
+            'php_version' => $this->option('php') ?? 'php84',
+            'php_cli_version' => $this->option('php') ?? 'php84',
+            'max_upload_size' => '5',
+            'max_execution_time' => '30',
+            'ip_address' => $this->argument('ip'),
+            'private_ip_address' => $this->option('private_ip'),
         ]);
 
         if (! is_dir(base_path('.blacksmith'))) {
@@ -55,17 +55,17 @@ class BuildServer extends Command
         touch(base_path('.blacksmith/'.$server->id.'/config.json'));
 
         file_put_contents(base_path('.blacksmith/'.$server->id.'/config.json'), json_encode([
-            "server" => [
-                "id" => $server->id,
-                "name" => $server->name,
-                "type" => $server->type,
-                "ip_address" => $this->argument('ip'),
-                "private_ip_address" => $this->option('private_ip') ?? null,
-                "php_version" => $server->phpVersion,
-                "opcache_enabled" => true,
-                "ubuntu_version" => $server->ubuntuVersion,
+            'server' => [
+                'id' => $server->id,
+                'name' => $server->name,
+                'type' => $server->type,
+                'ip_address' => $this->argument('ip'),
+                'private_ip_address' => $this->option('private_ip') ?? null,
+                'php_version' => $server->phpVersion,
+                'opcache_enabled' => true,
+                'ubuntu_version' => $server->ubuntuVersion,
             ],
-            "sites" => [],
+            'sites' => [],
         ], JSON_PRETTY_PRINT));
 
         $contents = <<<EOT

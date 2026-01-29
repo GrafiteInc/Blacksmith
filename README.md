@@ -20,7 +20,7 @@ The Backsmith package is a easy to use tool for handling long term projects on L
 
 | Laravel Version | Package Tag | Supported |
 |-----------------|-------------|-----------|
-| ^11.x | 1.x | yes |
+| ^11.x-^12.x | 1.x | yes |
 
 ### Installation
 
@@ -41,7 +41,7 @@ php artisan vendor:publish --provider="Grafite\Blacksmith\BlacksmithProvider"
 
 ## Documentation
 
-[https://docs.grafite.ca/utilities/blacksmith](https://docs.grafite.ca/utilities/blacksmith)
+[https://documentation.grafite.ca/docs/utilities-blacksmith](https://documentation.grafite.ca/docs/utilities-blacksmith)
 
 ## License
 Support is open-sourced software licensed under the [MIT license](http://opensource.org/licenses/MIT)

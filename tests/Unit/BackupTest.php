@@ -2,15 +2,15 @@
 
 namespace Grafite\Blacksmith\Tests\Unit;
 
-use Tests\TestCase;
-use Illuminate\Support\Facades\Http;
 use Grafite\Blacksmith\Commands\Backup;
+use Illuminate\Support\Facades\Http;
+use Orchestra\Testbench\TestCase;
 
 class BackupTest extends TestCase
 {
     public $command;
 
-    public function setUp(): void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -19,7 +19,7 @@ class BackupTest extends TestCase
         $this->command = app(Backup::class);
     }
 
-    public function testBackup()
+    public function test_backup()
     {
         $this->markTestIncomplete('Not sure how to test yet.');
 

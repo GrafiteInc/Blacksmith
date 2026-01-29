@@ -6,21 +6,21 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Laravel\Forge\Forge;
 
-class WorkersRestart extends Command
+class Scale extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:workers-restart {--server=} {--site=}';
+    protected $signature = 'blacksmith:scale {--server=} {--site=} {--scope=}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Restart the workers for a Forge site.';
+    protected $description = 'Deploy a Forge site.';
 
     /**
      * Execute the console command.
@@ -38,6 +38,11 @@ class WorkersRestart extends Command
             })->toArray();
         }
 
+        // get servers that are not load balancers
+        // clone one
+        // build the site from the cloned server on the new server
+        // update the load balancer to point to the new server
+
         foreach ($serverIds as $serverId) {
             $basePath = base_path('.blacksmith/'.$serverId.'/');
             $config = json_decode(file_get_contents($basePath.'config.json'), true);
@@ -51,14 +56,9 @@ class WorkersRestart extends Command
             foreach ($siteConfigs as $config) {
                 $siteId = $config['id'];
 
-                // Handling workers
-                if (isset($config['workers'])) {
-                    foreach ($forge->workers($serverId, $siteId) as $worker) {
-                        $forge->restartWorker($serverId, $siteId, $worker->id);
-                    }
+                $forge->post("servers/$serverId/sites/$siteId/deployment/deploy");
 
-                    $this->info('Workers restarted.');
-                }
+                $this->info('Site deployment triggered.');
             }
         }
 

@@ -2,8 +2,8 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 class Setup extends Command
 {
@@ -43,9 +43,9 @@ class Setup extends Command
         // Create the .blacksmith/config.json file
         touch($basePath.'/config.json');
 
-        $server = $this->option('server') ?? "unknown";
-        $site = $this->option('site') ?? "unknown";
-        $domain = $this->option('domain') ?? "domain";
+        $server = $this->option('server') ?? 'unknown';
+        $site = $this->option('site') ?? 'unknown';
+        $domain = $this->option('domain') ?? 'domain';
         $name = 'server-'.Str::random(10);
 
         $configContents = <<<EOT

@@ -2,22 +2,22 @@
 
 namespace Grafite\Blacksmith\Tests\Unit;
 
-use Tests\TestCase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
 
 class SetupTest extends TestCase
 {
     public $command;
 
-    public function setUp(): void
+    protected function setUp(): void
     {
         parent::setUp();
 
         Http::fake();
     }
 
-    public function testSetup()
+    public function test_setup()
     {
         // $this->markTestIncomplete('Not sure how to test yet.');
 
@@ -29,8 +29,8 @@ class SetupTest extends TestCase
         $this->assertTrue(file_exists(base_path('.blacksmith/test.com.env')));
         $this->assertTrue(file_exists(base_path('.blacksmith/test.com.deploy')));
 
-        @array_map('unlink', glob(base_path('.blacksmith')."/*"));
-        @array_map('unlink', glob(base_path('.blacksmith')."/.*"));
+        @array_map('unlink', glob(base_path('.blacksmith').'/*'));
+        @array_map('unlink', glob(base_path('.blacksmith').'/.*'));
         rmdir(base_path('.blacksmith'));
     }
 }

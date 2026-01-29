@@ -33,5 +33,23 @@ return [
         'region' => env('BLACKSMITH_AWS_DEFAULT_REGION'),
         'bucket' => env('BLACKSMITH_AWS_BUCKET'),
         'url' => env('BLACKSMITH_AWS_URL'),
-    ]
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Server Provider
+    |--------------------------------------------------------------------------
+    */
+    'server_provider' => env('BLACKSMITH_SERVER_PROVIDER', 'digitalocean'),
+    'server_provider_token' => env('BLACKSMITH_SERVER_PROVIDER_TOKEN'),
+    'server_provider_options' => [
+        'digitalocean' => [
+            'size' => env('BLACKSMITH_DO_SIZE', 's-1vcpu-2gb-amd'),
+            'region' => env('BLACKSMITH_DO_REGION', 'tor1'),
+            'image' => env('BLACKSMITH_DO_IMAGE', 'ubuntu-24-04-x64'),
+            'backups' => env('BLACKSMITH_DO_BACKUPS', false),
+            'ipv6' => env('BLACKSMITH_DO_IPV6', false),
+            'monitoring' => env('BLACKSMITH_DO_MONITORING', true),
+        ],
+    ],
 ];

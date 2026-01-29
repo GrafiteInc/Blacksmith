@@ -2,12 +2,12 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use ZipArchive;
-use Illuminate\Support\Str;
-use RecursiveIteratorIterator;
 use Illuminate\Console\Command;
-use RecursiveDirectoryIterator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ZipArchive;
 
 class Backup extends Command
 {
@@ -41,7 +41,7 @@ class Backup extends Command
         $path = 'blacksmith_backups/'.date('Y-m-d-H-i').'-'.config('blacksmith.project').'-backup.zip';
         $rootPath = base_path('.blacksmith');
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $zip->open(base_path('.blacksmith/backup.zip'), ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $files = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($rootPath),

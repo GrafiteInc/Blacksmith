@@ -2,8 +2,6 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
 
 class AddRedirects extends Command
@@ -29,7 +27,7 @@ class AddRedirects extends Command
      */
     public function handle()
     {
-        $this->info('"redirects": [' . PHP_EOL . '    {' . PHP_EOL . '        "from" : "example.com",' . PHP_EOL . '        "to" : "https://example.com",' . PHP_EOL . '        "type": "permanent"' . PHP_EOL . '    }' . PHP_EOL . '],');
+        $this->info('"redirects": ['.PHP_EOL.'    {'.PHP_EOL.'        "from" : "example.com",'.PHP_EOL.'        "to" : "https://example.com",'.PHP_EOL.'        "type": "permanent"'.PHP_EOL.'    }'.PHP_EOL.'],');
 
         return 0;
     }

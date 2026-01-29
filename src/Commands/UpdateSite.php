@@ -2,9 +2,9 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 
 class UpdateSite extends Command
 {
@@ -33,7 +33,7 @@ class UpdateSite extends Command
         $serverIds = [$this->option('server')];
 
         if (! $this->option('server')) {
-            $serverIds = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
                 return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
             })->toArray();
         }
@@ -52,15 +52,15 @@ class UpdateSite extends Command
                 $siteId = $config['id'];
                 $site = $forge->site($serverId, $siteId);
 
-                if ($config['php_version'] !== $site->phpVersion && $serverConfig['server']['type'] != "loadbalancer") {
+                if ($config['php_version'] !== $site->phpVersion && $serverConfig['server']['type'] != 'loadbalancer') {
                     $site->changePHPVersion($config['php_version']);
                 }
 
                 // create new site
                 $forge->setTimeout(120)->updateSite($serverId, $siteId, [
-                    "domain" => $config['domain'],
-                    "php_version" => $config['php_version'],
-                    "directory" => $config['directory'],
+                    'domain' => $config['domain'],
+                    'php_version' => $config['php_version'],
+                    'directory' => $config['directory'],
                 ], true);
 
                 $this->info($config['domain'].': Site updated');

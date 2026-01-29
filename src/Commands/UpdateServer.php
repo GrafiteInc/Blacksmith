@@ -2,9 +2,9 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Laravel\Forge\Forge;
-use Illuminate\Support\Str;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 
 class UpdateServer extends Command
 {
@@ -33,7 +33,7 @@ class UpdateServer extends Command
         $serverIds = [$this->option('server')];
 
         if (! $this->option('server')) {
-            $serverIds = collect(glob(base_path('.blacksmith') . '/*' , GLOB_ONLYDIR))->map(function ($server) {
+            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
                 return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
             })->toArray();
         }
@@ -55,9 +55,9 @@ class UpdateServer extends Command
             }
 
             $forge->setTimeout(120)->updateServer($serverId, [
-                "name" => $config['name'],
-                "php_version" => $config['php_version'],
-                "php_cli_version" => $config['php_cli_version'],
+                'name' => $config['name'],
+                'php_version' => $config['php_version'],
+                'php_cli_version' => $config['php_cli_version'],
                 'max_upload_size' => $config['max_upload_size'],
                 'max_execution_time' => $config['max_execution_time'],
                 'ip_address' => $config['ip_address'],
