@@ -169,6 +169,7 @@ class ForgeV2Client
             // Keep both flattened fields and an attributes array for existing legacy consumers:
             // - WorkersList reads $worker->attributes
             // - other commands read top-level fields like $worker->id and $worker->connection
+            // TODO: Remove this duplication in next major release after commands use a single shape.
             return (object) ($data + ['attributes' => $data]);
         })->all();
     }
@@ -258,7 +259,7 @@ class ForgeV2Client
         $organization = $organizations[0] ?? null;
 
         if (! $organization) {
-            throw new RuntimeException('No Forge organization found. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable to a valid organization slug from your Forge account.');
+            throw new RuntimeException('No Forge organization found. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable to your Forge organization slug (Forge dashboard -> Organizations).');
         }
 
         if (is_object($organization) && isset($organization->slug)) {

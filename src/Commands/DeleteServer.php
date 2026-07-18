@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
 use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 use Throwable;
 
@@ -41,7 +42,7 @@ class DeleteServer extends Command
         }
 
         if (is_dir(base_path('.blacksmith/'.$id))) {
-            rmdir(base_path('.blacksmith/'.$id));
+            File::deleteDirectory(base_path('.blacksmith/'.$id));
         }
         $this->info('Server deleted.');
 
