@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class UpdateSite extends Command
 {
@@ -50,12 +50,6 @@ class UpdateSite extends Command
 
             foreach ($siteConfigs as $config) {
                 $siteId = $config['id'];
-                $site = $forge->site($serverId, $siteId);
-
-                if ($config['php_version'] !== $site->phpVersion && $serverConfig['server']['type'] != 'loadbalancer') {
-                    $site->changePHPVersion($config['php_version']);
-                }
-
                 // create new site
                 $forge->setTimeout(120)->updateSite($serverId, $siteId, [
                     'domain' => $config['domain'],
