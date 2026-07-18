@@ -258,7 +258,7 @@ class ForgeV2Client
         $organization = $organizations[0] ?? null;
 
         if (! $organization) {
-            throw new RuntimeException('No Forge organization found. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable.');
+            throw new RuntimeException('No Forge organization found. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable to a valid organization slug from your Forge account.');
         }
 
         if (is_object($organization) && isset($organization->slug)) {
@@ -269,6 +269,6 @@ class ForgeV2Client
             return $organization['slug'];
         }
 
-        throw new RuntimeException('Unable to resolve Forge organization slug. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable.');
+        throw new RuntimeException('Unable to resolve Forge organization slug from the organizations response. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable explicitly.');
     }
 }
