@@ -3,7 +3,9 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
-use Laravel\Forge\Forge;
+use Illuminate\Support\Facades\File;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
+use Throwable;
 
 class DeleteServer extends Command
 {
@@ -31,10 +33,18 @@ class DeleteServer extends Command
         $forge = new Forge(config('blacksmith.forge_token'));
 
         $id = $this->argument('id');
-        if ($forge->setTimeout(120)->deleteServer($id)) {
-            rmdir(base_path('.blacksmith/'.$id));
-            $this->info('Server deleted.');
+        try {
+            $forge->setTimeout(120)->deleteServer($id);
+        } catch (Throwable $e) {
+            $this->error('Failed to delete server: '.$e->getMessage());
+
+            return 1;
         }
+
+        if (is_dir(base_path('.blacksmith/'.$id))) {
+            File::deleteDirectory(base_path('.blacksmith/'.$id));
+        }
+        $this->info('Server deleted.');
 
         return 0;
     }

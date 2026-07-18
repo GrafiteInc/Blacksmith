@@ -20,6 +20,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'forge_token' => env('BLACKSMITH_FORGE_TOKEN'),
+    'forge_organization' => env('BLACKSMITH_FORGE_ORGANIZATION'),
 
     /*
     |--------------------------------------------------------------------------

@@ -34,6 +34,12 @@ Then run the following to add Support
 composer require "grafite/blacksmith"
 ```
 
+Configure Forge credentials in your `.env`:
+```dotenv
+BLACKSMITH_FORGE_TOKEN=...
+BLACKSMITH_FORGE_ORGANIZATION=your-org-slug
+```
+
 Time to publish those assets!
 ```php
 php artisan vendor:publish --provider="Grafite\Blacksmith\BlacksmithProvider"

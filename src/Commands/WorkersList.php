@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class WorkersList extends Command
 {

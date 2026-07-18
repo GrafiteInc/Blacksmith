@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class WorkersUp extends Command
 {
@@ -61,13 +61,13 @@ class WorkersUp extends Command
                 //     "domain" => $config['domain'],
                 //     "php_version" => $config['php_version'],
                 //     "directory" => $config['directory'],
-                // ], true);
+                // ]);
 
                 // $this->info('Site updated');
 
                 // Handle Repository
                 // if (isset($config['repository'])) {
-                //     $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
+                //     $forge->updateSiteGitRepository($serverId, $siteId, $config['repository']);
                 //     $this->info('Site Repository updated.');
                 // }
 
@@ -84,7 +84,7 @@ class WorkersUp extends Command
                 // Handling workers
                 if (isset($config['workers'])) {
                     foreach ($config['workers'] as $options) {
-                        $forge->createWorker($serverId, $siteId, $options, false);
+                        $forge->createWorker($serverId, $siteId, $options);
                     }
 
                     $this->info('Workers up.');
@@ -116,7 +116,7 @@ class WorkersUp extends Command
                 //     }
 
                 //     foreach ($config['redirects'] as $redirect) {
-                //         $forge->createRedirectRule($serverId, $siteId, $redirect, false);
+                //         $forge->createRedirectRule($serverId, $siteId, $redirect);
                 //     }
 
                 //     $this->info('Redirects updated.');

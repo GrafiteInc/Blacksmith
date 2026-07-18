@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class WorkersReset extends Command
 {
@@ -60,7 +60,7 @@ class WorkersReset extends Command
                     }
 
                     foreach ($config['workers'] as $options) {
-                        $forge->createWorker($serverId, $siteId, $options, false);
+                        $forge->createWorker($serverId, $siteId, $options);
                     }
 
                     $this->info('Workers reset.');

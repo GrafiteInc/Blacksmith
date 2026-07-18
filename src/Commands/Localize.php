@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class Localize extends Command
 {
@@ -151,8 +151,10 @@ class Localize extends Command
             // If balancing build them
             $balancing = $forge->get('servers/'.$serverId.'/sites/'.$site->id.'/balancing') ?? [];
 
-            if (count($balancing['nodes']) > 0) {
-                foreach ($balancing['nodes'] as $balance) {
+            $balancingNodes = $balancing['nodes'] ?? [];
+
+            if (count($balancingNodes) > 0) {
+                foreach ($balancingNodes as $balance) {
                     $sites[$key]['balancing'][] = [
                         'server_id' => $balance['server_id'],
                         'weight' => $balance['weight'],

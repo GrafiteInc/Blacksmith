@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Support\ForgeV2Client as Forge;
 
 class UpdateSite extends Command
 {
@@ -50,24 +50,18 @@ class UpdateSite extends Command
 
             foreach ($siteConfigs as $config) {
                 $siteId = $config['id'];
-                $site = $forge->site($serverId, $siteId);
-
-                if ($config['php_version'] !== $site->phpVersion && $serverConfig['server']['type'] != 'loadbalancer') {
-                    $site->changePHPVersion($config['php_version']);
-                }
-
-                // create new site
+                // update existing site
                 $forge->setTimeout(120)->updateSite($serverId, $siteId, [
                     'domain' => $config['domain'],
                     'php_version' => $config['php_version'],
                     'directory' => $config['directory'],
-                ], true);
+                ]);
 
                 $this->info($config['domain'].': Site updated');
 
                 // Handle Repository
                 if (isset($config['repository']) && ! is_null($config['repository']['repository'])) {
-                    $forge->updateSiteGitRepository($serverId, $siteId, $config['repository'], true);
+                    $forge->updateSiteGitRepository($serverId, $siteId, $config['repository']);
                     $this->info($config['domain'].': Site Repository updated.');
                 }
 
@@ -91,7 +85,7 @@ class UpdateSite extends Command
                     }
 
                     foreach ($config['workers'] as $options) {
-                        $forge->createWorker($serverId, $siteId, $options, false);
+                        $forge->createWorker($serverId, $siteId, $options);
                     }
 
                     $this->info($config['domain'].': Workers updated.');
@@ -123,7 +117,7 @@ class UpdateSite extends Command
                     }
 
                     foreach ($config['redirects'] as $redirect) {
-                        $forge->createRedirectRule($serverId, $siteId, $redirect, false);
+                        $forge->createRedirectRule($serverId, $siteId, $redirect);
                     }
 
                     $this->info($config['domain'].': Redirects updated.');

@@ -8,6 +8,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Chore
 - version bump
 
+## [v1.5.2] - 2026-07-18
+
+### Added
+- Forge V2 organization slug configuration
+
+### Changed
+- upgraded `laravel/forge-sdk` to v4
+- added Forge V2 compatibility client for Blacksmith commands
+
 ## [v1.5.0] - 2026-01-29
 
 ### Fix
