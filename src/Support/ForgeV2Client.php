@@ -166,7 +166,9 @@ class ForgeV2Client
             $id = $worker['id'] ?? ($attributes['id'] ?? null);
             $data = ['id' => $id] + $attributes;
 
-            // Keep both flattened attributes and raw attributes for legacy command compatibility.
+            // Keep both flattened fields and an attributes array for existing legacy consumers:
+            // - WorkersList reads $worker->attributes
+            // - other commands read top-level fields like $worker->id and $worker->connection
             return (object) ($data + ['attributes' => $data]);
         })->all();
     }
@@ -256,7 +258,7 @@ class ForgeV2Client
         $organization = $organizations[0] ?? null;
 
         if (! $organization) {
-            throw new RuntimeException('No Forge organization found. Set blacksmith.forge_organization (BLACKSMITH_FORGE_ORGANIZATION).');
+            throw new RuntimeException('No Forge organization found. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable.');
         }
 
         if (is_object($organization) && isset($organization->slug)) {
@@ -267,6 +269,6 @@ class ForgeV2Client
             return $organization['slug'];
         }
 
-        throw new RuntimeException('Unable to resolve Forge organization slug. Set blacksmith.forge_organization (BLACKSMITH_FORGE_ORGANIZATION).');
+        throw new RuntimeException('Unable to resolve Forge organization slug. Set the forge_organization config value or BLACKSMITH_FORGE_ORGANIZATION environment variable.');
     }
 }

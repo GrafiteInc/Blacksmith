@@ -32,7 +32,9 @@ class DeleteServer extends Command
 
         $id = $this->argument('id');
         $forge->setTimeout(120)->deleteServer($id);
-        rmdir(base_path('.blacksmith/'.$id));
+        if (is_dir(base_path('.blacksmith/'.$id))) {
+            rmdir(base_path('.blacksmith/'.$id));
+        }
         $this->info('Server deleted.');
 
         return 0;
