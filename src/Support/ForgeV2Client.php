@@ -57,12 +57,12 @@ class ForgeV2Client
         return $this->forge->organizationSite($this->organization, $siteId);
     }
 
-    public function createSite(int $serverId, array $data, bool $wait = true): mixed
+    public function createSite(int $serverId, array $data, bool $_wait = true): mixed
     {
         return $this->forge->createSite($this->organization, $serverId, $data);
     }
 
-    public function updateSite(int $serverId, int $siteId, array $data, bool $wait = true): void
+    public function updateSite(int $serverId, int $siteId, array $data, bool $_wait = true): void
     {
         $this->forge->updateSite($this->organization, $serverId, $siteId, $data);
     }
@@ -72,12 +72,12 @@ class ForgeV2Client
         $this->forge->deleteSite($this->organization, $serverId, $siteId);
     }
 
-    public function createJob(int $serverId, array $data, bool $wait = false): mixed
+    public function createJob(int $serverId, array $data, bool $_wait = false): mixed
     {
         return $this->forge->createScheduledJob($this->organization, $serverId, $data);
     }
 
-    public function updateSiteGitRepository(int $serverId, int $siteId, array $repository, bool $wait = true): void
+    public function updateSiteGitRepository(int $serverId, int $siteId, array $repository, bool $_wait = true): void
     {
         $this->forge->updateSite($this->organization, $serverId, $siteId, [
             'repository' => $repository['repository'] ?? null,
@@ -87,9 +87,9 @@ class ForgeV2Client
         ]);
     }
 
-    public function installGitRepositoryOnSite(int $serverId, int $siteId, array $repository, bool $wait = true): void
+    public function installGitRepositoryOnSite(int $serverId, int $siteId, array $repository, bool $_wait = true): void
     {
-        $this->updateSiteGitRepository($serverId, $siteId, $repository);
+        $this->updateSiteGitRepository($serverId, $siteId, $repository, $_wait);
     }
 
     public function updateSiteEnvironmentFile(int $serverId, int $siteId, string $content): void
@@ -141,7 +141,7 @@ class ForgeV2Client
         return $this->forge->redirectRules($this->organization, $serverId, $siteId);
     }
 
-    public function createRedirectRule(int $serverId, int $siteId, array $data, bool $wait = true): void
+    public function createRedirectRule(int $serverId, int $siteId, array $data, bool $_wait = true): void
     {
         $this->forge->createRedirectRule($this->organization, $serverId, $siteId, $data);
     }
@@ -170,7 +170,7 @@ class ForgeV2Client
         })->all();
     }
 
-    public function createWorker(int $serverId, int $siteId, array $data, bool $wait = false): mixed
+    public function createWorker(int $serverId, int $siteId, array $data, bool $_wait = false): mixed
     {
         $response = $this->forge->post($this->normalizeUri("servers/{$serverId}/sites/{$siteId}/workers"), $data);
 
@@ -187,7 +187,7 @@ class ForgeV2Client
         return $this->forge->post($this->normalizeUri("servers/{$serverId}/sites/{$siteId}/workers/{$workerId}/restart"));
     }
 
-    public function obtainLetsEncryptCertificate(int $serverId, int $siteId, array $data, bool $wait = false): mixed
+    public function obtainLetsEncryptCertificate(int $serverId, int $siteId, array $data, bool $_wait = false): mixed
     {
         return $this->forge->post($this->normalizeUri("servers/{$serverId}/sites/{$siteId}/certificates/letsencrypt"), $data);
     }
@@ -255,7 +255,7 @@ class ForgeV2Client
         $organization = $organizations[0] ?? null;
 
         if (! $organization) {
-            throw new RuntimeException('No Forge organization found. Set BLACKSMITH_FORGE_ORGANIZATION.');
+            throw new RuntimeException('No Forge organization found. Please set the BLACKSMITH_FORGE_ORGANIZATION environment variable.');
         }
 
         if (is_object($organization) && isset($organization->slug)) {
@@ -266,6 +266,6 @@ class ForgeV2Client
             return $organization['slug'];
         }
 
-        throw new RuntimeException('Unable to resolve Forge organization slug. Set BLACKSMITH_FORGE_ORGANIZATION.');
+        throw new RuntimeException('Unable to resolve Forge organization slug. Please set the BLACKSMITH_FORGE_ORGANIZATION environment variable.');
     }
 }
