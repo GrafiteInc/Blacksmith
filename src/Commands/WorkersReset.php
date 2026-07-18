@@ -60,7 +60,7 @@ class WorkersReset extends Command
                     }
 
                     foreach ($config['workers'] as $options) {
-                        $forge->createWorker($serverId, $siteId, $options, false);
+                        $forge->createWorker($serverId, $siteId, $options);
                     }
 
                     $this->info('Workers reset.');

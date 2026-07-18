@@ -138,7 +138,7 @@ class BuildSite extends Command
                 'directory' => $siteConfig['directory'] ?? '/public',
                 'isolated' => false,
                 'php_version' => $siteConfig['php_version'],
-            ], true);
+            ]);
 
             $this->info('Site ID: '.$site->id.' created.');
 
@@ -151,7 +151,7 @@ class BuildSite extends Command
 
             // Handle Repository
             if ($siteConfig['repository']) {
-                $forge->installGitRepositoryOnSite($serverId, $siteId, $siteConfig['repository'], true);
+                $forge->installGitRepositoryOnSite($serverId, $siteId, $siteConfig['repository']);
                 $this->info('Site Repository done.');
             }
 
@@ -170,7 +170,7 @@ class BuildSite extends Command
                     'day' => '*',
                     'month' => '*',
                     'weekday' => '*',
-                ], false);
+                ]);
 
                 $this->info('Cron jobs done.');
             }
@@ -182,7 +182,7 @@ class BuildSite extends Command
             // Handling workers
             if ($siteConfig['workers']) {
                 foreach ($siteConfig['workers'] as $options) {
-                    $forge->createWorker($serverId, $siteId, $options, false);
+                    $forge->createWorker($serverId, $siteId, $options);
                 }
                 $this->info('Workers done.');
             }
@@ -191,7 +191,7 @@ class BuildSite extends Command
             if ($siteConfig['lets_encrypt']) {
                 $forge->obtainLetsEncryptCertificate($serverId, $siteId, [
                     'domains' => $siteConfig['domains'],
-                ], false);
+                ]);
                 $this->info('SSL done.');
             }
 
@@ -213,7 +213,7 @@ class BuildSite extends Command
             // Handle Redirects
             if (isset($siteConfig['security'])) {
                 foreach ($siteConfig['redirects'] as $redirect) {
-                    $forge->createRedirectRule($serverId, $siteId, $redirect, false);
+                    $forge->createRedirectRule($serverId, $siteId, $redirect);
                 }
 
                 $this->info('Redirects done.');
