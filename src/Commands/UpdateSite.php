@@ -50,7 +50,7 @@ class UpdateSite extends Command
 
             foreach ($siteConfigs as $config) {
                 $siteId = $config['id'];
-                // create new site
+                // update existing site
                 $forge->setTimeout(120)->updateSite($serverId, $siteId, [
                     'domain' => $config['domain'],
                     'php_version' => $config['php_version'],
