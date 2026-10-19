@@ -2,14 +2,12 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ZipArchive;
 
-class Backup extends Command
+class Backup extends BlacksmithCommand
 {
     /**
      * The name and signature of the console command.
@@ -28,49 +26,49 @@ class Backup extends Command
     /**
      * Execute the console command.
      *
-     * @return mixed
+     * @return int
      */
     public function handle()
     {
         if (is_null(config('blacksmith.project'))) {
             $this->error('Please set the project name in the blacksmith config file.');
 
-            return 1;
+            return self::FAILURE;
+        }
+
+        $root = $this->blueprints()->root();
+
+        if (! is_dir($root)) {
+            $this->error("Nothing to back up, {$root} does not exist.");
+
+            return self::FAILURE;
         }
 
         $path = 'blacksmith_backups/'.date('Y-m-d-H-i').'-'.config('blacksmith.project').'-backup.zip';
-        $rootPath = base_path('.blacksmith');
+        $archive = tempnam(sys_get_temp_dir(), 'blacksmith');
 
         $zip = new ZipArchive;
-        $zip->open(base_path('.blacksmith/backup.zip'), ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->open($archive, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
         $files = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($rootPath),
+            new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::LEAVES_ONLY
         );
 
         foreach ($files as $file) {
-            // Skip directories (they would be added automatically)
             if (! $file->isDir()) {
-                // Get real and relative path for current file
-                $filePath = $file->getRealPath();
-                if (! Str::of($filePath)->contains('backup')) {
-                    $relativePath = substr($filePath, strlen($rootPath) + 1);
-
-                    // Add current file to archive
-                    $zip->addFile($filePath, $relativePath);
-                }
+                $zip->addFile($file->getRealPath(), substr($file->getPathname(), strlen($root) + 1));
             }
         }
 
-        // Zip archive will be created only after closing object
         $zip->close();
 
-        Storage::build(config('blacksmith.backup_storage'))->put($path, file_get_contents(base_path('.blacksmith/backup.zip')));
+        Storage::build(config('blacksmith.backup_storage'))->put($path, file_get_contents($archive));
 
-        unlink(base_path('.blacksmith/backup.zip'));
+        unlink($archive);
 
-        $this->info('Backup saved.');
+        $this->info('Backup saved to '.$path);
 
-        return 0;
+        return self::SUCCESS;
     }
 }

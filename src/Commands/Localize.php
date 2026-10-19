@@ -2,182 +2,102 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Illuminate\Console\Command;
+use Grafite\Blacksmith\Actions\PullFromForge;
+use Grafite\Blacksmith\Blueprint\LegacyMigrator;
 use Illuminate\Support\Str;
 use Laravel\Forge\Forge;
+use RuntimeException;
 
-class Localize extends Command
+class Localize extends BlacksmithCommand
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:localize {--server=}';
+    protected $signature = 'blacksmith:localize
+        {--server= : The Forge server ID to pull}
+        {--instance= : The name to give the instance}
+        {--profile= : The server profile to save the server as}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Set up a blacksmith configuration from an existing Forge server.';
+    protected $description = 'Pull Forge server and site configuration into local blueprints.';
 
     /**
      * Execute the console command.
      *
-     * @return mixed
+     * @return int
      */
-    public function handle()
+    public function handle(LegacyMigrator $migrator, PullFromForge $pull)
     {
-        $forge = new Forge(config('blacksmith.forge_token'));
-        $basePath = base_path('.blacksmith');
-        $config = null;
+        try {
+            $this->blueprints()->ensureRoot();
+            $this->ensureGitIgnored();
 
-        if (file_exists($basePath.'/config.json')) {
-            $config = json_decode(file_get_contents($basePath.'/config.json'), true);
-        }
-
-        if ($this->option('server') && ! file_exists(base_path('.blacksmith/'.$this->option('server').'/config.json'))) {
-            $this->info('Server does not exist in your local blacksmith configuration.');
-            $this->info('php artisan blacksmith:setup --server='.$this->option('server').' --site=###');
-
-            return 0;
-        }
-
-        if ($this->option('server') && file_exists(base_path('.blacksmith/'.$this->option('server').'/config.json'))) {
-            $config = json_decode(file_get_contents(base_path('.blacksmith/'.$this->option('server').'/config.json')), true);
-            $basePath = base_path('.blacksmith/'.$this->option('server'));
-        }
-
-        if (is_null($config)) {
-            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
-                return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
-            })->toArray();
-
-            if (count($serverIds) === 1) {
-                $config = json_decode(file_get_contents(base_path('.blacksmith/'.$serverIds[0].'/config.json')), true);
-
-                $basePath = base_path('.blacksmith/'.$serverIds[0]);
-            }
-        }
-
-        throw_if(is_null($config), new \Exception('No configuration found. Run php artisan blacksmith:setup'));
-
-        $serverId = $config['server']['id'];
-
-        $server = $forge->server($serverId);
-
-        $config['server']['id'] = $server->id;
-        $config['server']['name'] = $server->name;
-        $config['server']['type'] = $server->type;
-        $config['server']['ubuntu_version'] = $server->ubuntuVersion;
-        $config['server']['ip_address'] = $server->ipAddress;
-        $config['server']['private_ip_address'] = $server->privateIpAddress;
-        $config['server']['opcache_enabled'] = ($server->opcacheStatus === 'enabled') ? true : false;
-
-        file_put_contents($basePath.'/config.json', json_encode($config, JSON_PRETTY_PRINT));
-
-        $sites = [];
-
-        foreach ($forge->sites($serverId) as $key => $site) {
-            $sites[$key]['id'] = $site->id;
-            $sites[$key]['domain'] = $site->name;
-            $sites[$key]['php_version'] = $site->phpVersion;
-            $sites[$key]['directory'] = $site->directory;
-            $sites[$key]['scheduler_enabled'] = false;
-            $sites[$key]['lets_encrypt'] = $site->isSecured;
-            $sites[$key]['ssl_domains'] = [
-                $site->name,
-                'www.'.$site->name,
-            ];
-            $sites[$key]['enable_quick_deploy'] = $site->quickDeploy;
-
-            $sites[$key]['repository'] = [
-                'repository' => $site->repository,
-                'provider' => $site->repositoryProvider,
-                'branch' => $site->repositoryBranch,
-                'composer' => false,
-            ];
-
-            $sites[$key]['environment_variables_file'] = $site->name.'.env';
-            $sites[$key]['deployment_file'] = $site->name.'.deploy';
-            $sites[$key]['workers'] = null;
-            $sites[$key]['security'] = null;
-            $sites[$key]['redirects'] = null;
-            $sites[$key]['balancing'] = null;
-
-            // If workers build them
-            $workers = $forge->workers($serverId, $site->id);
-
-            foreach ($workers as $worker) {
-                $sites[$key]['workers'][] = [
-                    'connection' => $worker->connection,
-                    'queue' => $worker->queue,
-                    'timeout' => $worker->timeout,
-                    'processes' => $worker->processes,
-                    'tries' => $worker->tries,
-                    'sleep' => $worker->sleep,
-                    'daemon' => $worker->daemon,
-                    'stopwaitsecs' => $worker->stopwaitsecs,
-                    'php_version' => $site->phpVersion,
-                ];
+            if ($migrator->detect()) {
+                $this->info('Migrating the v1 configuration.');
+                $migrator->reportUsing($this->reporter())->migrate();
             }
 
-            // If security rules build them
-            $security = $forge->securityRules($serverId, $site->id);
+            $pull->reportUsing($this->reporter());
 
-            if (count($security) > 0) {
-                foreach ($security as $rule) {
-                    $sites[$key]['security'][] = [
-                        'type' => $rule->type,
-                        'value' => $rule->value,
-                    ];
+            if ($this->option('server')) {
+                $pull->server($this->option('server'), $this->option('instance'), $this->option('profile'));
+            } elseif ($instances = $this->state()->instances()) {
+                foreach ($instances as $name => $instance) {
+                    if (! empty($instance['server_id'])) {
+                        $pull->server($instance['server_id'], $name);
+                    }
                 }
+            } else {
+                [$serverId, $instance] = $this->chooseServer();
+                $pull->server($serverId, $instance, $this->option('profile'));
             }
-
-            // If redirects build them
-            $redirects = $forge->redirectRules($serverId, $site->id);
-
-            if (count($redirects) > 0) {
-                foreach ($redirects as $redirect) {
-                    $sites[$key]['redirects'][] = [
-                        'from' => $redirect->from,
-                        'to' => $redirect->to,
-                        'code' => $redirect->code,
-                    ];
-                }
-            }
-
-            // If balancing build them
-            $balancing = $forge->get('servers/'.$serverId.'/sites/'.$site->id.'/balancing') ?? [];
-
-            if (count($balancing['nodes']) > 0) {
-                foreach ($balancing['nodes'] as $balance) {
-                    $sites[$key]['balancing'][] = [
-                        'server_id' => $balance['server_id'],
-                        'weight' => $balance['weight'],
-                        'down' => $balance['down'],
-                        'backup' => $balance['backup'],
-                        'port' => $balance['port'],
-                    ];
-                }
-            }
-
-            // handling environment files
-            $environment = $forge->siteEnvironmentFile($config['server']['id'], $site->id);
-            file_put_contents($basePath.'/'.$site->name.'.env', $environment);
-
-            // Handling deployment script
-            $deploy = $forge->siteDeploymentScript($config['server']['id'], $site->id);
-            file_put_contents($basePath.'/'.$site->name.'.deploy', $deploy);
-
-            $this->info('Laravel Forge data localized for site: '.$site->name);
+        } catch (RuntimeException $exception) {
+            return $this->failWith($exception);
         }
 
-        $config['sites'] = $sites;
+        $this->info('Blueprints saved to '.$this->blueprints()->root());
 
-        file_put_contents($basePath.'/config.json', json_encode($config, JSON_PRETTY_PRINT));
+        return self::SUCCESS;
+    }
 
-        return 0;
+    protected function chooseServer(): array
+    {
+        if (! $this->input->isInteractive()) {
+            throw new RuntimeException('Pass --server=ID to choose the Forge server to pull.');
+        }
+
+        $servers = collect($this->laravel->make(Forge::class)->servers())
+            ->mapWithKeys(fn ($server) => [$server->id => "{$server->name} ({$server->ipAddress})"]);
+
+        if ($servers->isEmpty()) {
+            throw new RuntimeException('No servers found in your Forge account.');
+        }
+
+        $label = $this->choice('Which Forge server should be localized?', $servers->values()->toArray());
+        $serverId = $servers->search($label);
+
+        $instance = $this->option('instance')
+            ?? $this->ask('What should this instance be called?', Str::slug(Str::before($label, ' (')));
+
+        return [$serverId, $instance];
+    }
+
+    protected function ensureGitIgnored(): void
+    {
+        $gitignore = base_path('.gitignore');
+        $root = $this->blueprints()->root();
+        $relative = '/'.ltrim(Str::after($root, base_path()), '/');
+
+        if (! Str::startsWith($root, base_path()) || ! file_exists($gitignore) || Str::contains(file_get_contents($gitignore), $relative)) {
+            return;
+        }
+
+        file_put_contents($gitignore, rtrim(file_get_contents($gitignore)).PHP_EOL.$relative.PHP_EOL);
     }
 }

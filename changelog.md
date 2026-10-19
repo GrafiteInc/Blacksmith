@@ -3,6 +3,27 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.0.0] - Unreleased
+
+### Breaking
+- Configuration split into portable blueprints (`servers/`, `sites/`) and `state.json`, the v1 layout is migrated by `blacksmith:localize`
+- Commands reduced to: localize, make-server, update-server, workers, backup, instance, balancer, scale
+- Removed: setup, build-server, build-site, clone-server, delete-server, update-site, deploy, site-up, site-down, add-worker, add-security, add-redirects, workers-up/down/reset/restart/list
+- Requires PHP 8.2
+
+### Feature
+- `blacksmith:instance` creates a server with copies of your sites and deploys them
+- `blacksmith:balancer` and `blacksmith:scale` load balance a site across web-only nodes
+- `make-server` provisions custom servers end to end over SSH, with no manual step
+- `update-server` creates missing sites, only pushes what changed, and supports `--dry-run`, `--only` and `--deploy`
+- Per-instance env overrides with `.env.{instance}`
+
+### Fix
+- SSL used the wrong domains key, redirects were gated on security rules
+- Workers were duplicated by workers-up
+- Load balancing method sent as `round-robin` instead of `round_robin`
+- Scheduler job used `php84` instead of the `php8.4` binary
+
 ## [v1.5.1] - 2026-04-22
 
 ### Chore

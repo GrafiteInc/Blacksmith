@@ -2,71 +2,89 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Str;
+use Grafite\Blacksmith\Actions\SyncServer;
+use Grafite\Blacksmith\Actions\SyncSite;
 use Laravel\Forge\Forge;
+use RuntimeException;
 
-class UpdateServer extends Command
+class UpdateServer extends BlacksmithCommand
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:update-server {--server=}';
+    protected $signature = 'blacksmith:update-server
+        {instance? : The instance to update, all instances when omitted}
+        {--site=* : Only these sites, a site missing from the server is created}
+        {--only= : Comma separated sections: server,site,repository,env,deploy,scheduler,workers,ssl,quick_deploy,redirects,security,balancing}
+        {--deploy : Trigger a deployment after updating}
+        {--dry-run : Show what would change without changing anything}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Update the configuration of a Forge server.';
+    protected $description = 'Push the server profile and site blueprints to Forge.';
 
     /**
      * Execute the console command.
      *
-     * @return mixed
+     * @return int
      */
-    public function handle()
+    public function handle(Forge $forge, SyncServer $server, SyncSite $site)
     {
-        $forge = new Forge(config('blacksmith.forge_token'));
-        $serverIds = [$this->option('server')];
+        $only = array_filter(array_map('trim', explode(',', (string) $this->option('only'))));
+        $unknown = array_diff($only, array_merge(['server'], SyncSite::SECTIONS));
 
-        if (! $this->option('server')) {
-            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
-                return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
-            })->toArray();
+        if ($unknown) {
+            $this->error('Unknown sections: '.implode(', ', $unknown));
+
+            return self::FAILURE;
         }
 
-        foreach ($serverIds as $serverId) {
-            $config = json_decode(file_get_contents(base_path('.blacksmith/'.$serverId.'/config.json')), true);
-            $config = $config['server'];
+        $plan = $this->plan((bool) $this->option('dry-run'));
+        $siteSections = array_values(array_diff($only, ['server']));
 
-            $server = $forge->server($serverId);
+        try {
+            foreach ($this->resolveInstances($this->argument('instance')) as $instance) {
+                if (empty($only) || in_array('server', $only, true)) {
+                    $server->handle($instance, $plan);
+                }
 
-            if ($config['opcache_enabled']) {
-                $server->enableOPCache();
-            } else {
-                $server->disableOPCache();
+                if (! empty($only) && empty($siteSections)) {
+                    continue;
+                }
+
+                $sites = $this->resolveSites($instance, $this->option('site'));
+
+                if (empty($sites)) {
+                    $this->warn("{$instance}: No sites, pass --site to add one.");
+                }
+
+                foreach ($sites as $domain) {
+                    $siteId = $site->handle($instance, $domain, $plan, $siteSections);
+
+                    if ($this->option('deploy') && $this->state()->roleFor($instance, $domain) !== 'balancer') {
+                        $serverId = $this->state()->instance($instance)['server_id'];
+
+                        $plan->step("{$instance} {$domain}: Deploy", fn () => $forge->deploySite($serverId, $siteId, false));
+                    }
+                }
             }
-
-            if (! collect($server->phpVersions)->pluck('version')->contains($config['php_version'])) {
-                $server->installPHP($config['php_version']);
-            }
-
-            $forge->setTimeout(120)->updateServer($serverId, [
-                'name' => $config['name'],
-                'php_version' => $config['php_version'],
-                'php_cli_version' => $config['php_cli_version'],
-                'max_upload_size' => $config['max_upload_size'],
-                'max_execution_time' => $config['max_execution_time'],
-                'ip_address' => $config['ip_address'],
-                'private_ip_address' => $config['private_ip_address'],
-            ], true);
-
-            $this->info('Server updated');
+        } catch (RuntimeException $exception) {
+            return $this->failWith($exception);
         }
 
-        return 0;
+        if (empty($plan->steps())) {
+            $this->info('Everything matches the blueprints.');
+        } elseif ($plan->dryRun) {
+            $this->info(count($plan->steps()).' change(s) planned, run without --dry-run to apply.');
+        } else {
+            $this->info(count($plan->steps()).' change(s) applied.');
+        }
+
+        return self::SUCCESS;
     }
 }

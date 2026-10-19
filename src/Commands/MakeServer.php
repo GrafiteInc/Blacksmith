@@ -2,84 +2,52 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use DigitalOceanV2\Client;
-use Illuminate\Console\Command;
+use Grafite\Blacksmith\Actions\ProvisionServer;
+use Grafite\Blacksmith\Actions\SyncServer;
+use RuntimeException;
 
-class MakeServer extends Command
+class MakeServer extends BlacksmithCommand
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:make-server {name}';
+    protected $signature = 'blacksmith:make-server
+        {instance : The name of the new instance}
+        {--profile=app : The server profile in .blacksmith/servers}
+        {--ip= : Use an existing server at this IP instead of creating one}
+        {--private-ip= : The private IP of the existing server}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Create a new server via the provider.';
+    protected $description = 'Create a server, connect it to Forge as a custom server and provision it.';
 
     /**
      * Execute the console command.
      *
-     * @return mixed
+     * @return int
      */
-    public function handle()
+    public function handle(ProvisionServer $provision, SyncServer $server)
     {
-        if (config('blacksmith.server_provider') === 'digitalocean') {
-            $client = new Client;
-            $client->authenticate(config('blacksmith.server_provider_token'));
-            $key = $client->key();
+        $instance = $this->argument('instance');
 
-            $droplet = $client->droplet();
-            $created = $droplet->create(
-                $this->argument('name'),
-                config('blacksmith.server_provider_options.digitalocean.region'),
-                config('blacksmith.server_provider_options.digitalocean.size'),
-                config('blacksmith.server_provider_options.digitalocean.image'),
-                config('blacksmith.server_provider_options.digitalocean.backups'),
-                config('blacksmith.server_provider_options.digitalocean.ipv6'),
-                false,
-                collect($key->getAll())->pluck('id')->toArray(),
-                '',
-                config('blacksmith.server_provider_options.digitalocean.monitoring'),
-                [],
-                ['blacksmith']
-            );
+        try {
+            $this->ensureProfile($this->option('profile'));
 
-            foreach (range(1, 8) as $seconds) {
-                $this->info('Waiting for server to be provisioned... '.$seconds.'0 seconds elapsed.');
-                sleep(10);
-            }
+            $provision->reportUsing($this->reporter())
+                ->handle($instance, $this->option('profile'), $this->option('ip'), $this->option('private-ip'));
 
-            $ipAddress = $droplet->getById($created->id)->networks[0]->ipAddress;
-
-            if ($ipAddress) {
-                $provision = $this->question('Server created with IP: '.$ipAddress.'. Do you want to provision with Forge?', 'info');
-
-                if ($provision) {
-                    $this->call('blacksmith:build-server', [
-                        'ip' => $ipAddress,
-                        '--name' => $this->argument('name'),
-                        '--type' => 'app',
-                        '--php' => 'php84',
-                        '--ubuntu' => '24.04',
-                        '--private_ip' => $droplet->getById($created->id)->networks[1]->ipAddress ?? null,
-                    ]);
-                } else {
-                    $this->info('You can provision this server later via Forge using the IP: '.$ipAddress);
-                }
-            } else {
-                $this->error('Server created but no IP found yet. Please check your provider dashboard.');
-            }
-        } else {
-            $this->error('Unsupported server provider configured.');
-
-            return 1;
+            $server->handle($instance, $this->plan());
+        } catch (RuntimeException $exception) {
+            return $this->failWith($exception);
         }
 
-        return 0;
+        $this->info("Instance {$instance} is ready, add sites with: php artisan blacksmith:update-server {$instance} --site=example.com");
+
+        return self::SUCCESS;
     }
 }

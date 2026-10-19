@@ -2,66 +2,152 @@
 
 namespace Grafite\Blacksmith\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Str;
+use Grafite\Blacksmith\Actions\BuildInstance;
+use Grafite\Blacksmith\Actions\ConfigureBalancer;
+use Grafite\Blacksmith\ServerProviders\ServerProvider;
+use Grafite\Blacksmith\Support\EnvFile;
+use Grafite\Blacksmith\Support\Plan;
 use Laravel\Forge\Forge;
+use RuntimeException;
 
-class Scale extends Command
+class Scale extends BlacksmithCommand
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'blacksmith:scale {--server=} {--site=} {--scope=}';
+    protected $signature = 'blacksmith:scale
+        {site : The site to scale}
+        {--to= : The total number of nodes behind the load balancer}
+        {--remove=* : Remove these nodes}
+        {--profile= : The server profile for new nodes, defaults to the primary node\'s profile}
+        {--force : Delete removed servers without asking}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Deploy a Forge site.';
+    protected $description = 'Add or remove web nodes behind a site\'s load balancer.';
 
     /**
      * Execute the console command.
      *
-     * @return mixed
+     * @return int
      */
-    public function handle()
+    public function handle(Forge $forge, BuildInstance $build, ConfigureBalancer $balancer)
     {
-        $forge = new Forge(config('blacksmith.forge_token'));
-        $serverIds = [$this->option('server')];
+        $domain = $this->argument('site');
+        $plan = $this->plan();
 
-        if (! $this->option('server')) {
-            $serverIds = collect(glob(base_path('.blacksmith').'/*', GLOB_ONLYDIR))->map(function ($server) {
-                return Str::of($server)->replace(base_path('.blacksmith/'), '')->toString();
-            })->toArray();
-        }
+        try {
+            $this->blueprints()->site($domain);
 
-        // get servers that are not load balancers
-        // clone one
-        // build the site from the cloned server on the new server
-        // update the load balancer to point to the new server
-
-        foreach ($serverIds as $serverId) {
-            $basePath = base_path('.blacksmith/'.$serverId.'/');
-            $config = json_decode(file_get_contents($basePath.'config.json'), true);
-            $siteConfigs = $config['sites'];
-
-            if ($this->option('site')) {
-                $config = collect($config['sites'])->where('id', $this->option('site'))->first();
-                $siteConfigs = ['sites' => $config];
+            if (empty($this->state()->pool($domain)['balancer'])) {
+                throw new RuntimeException("{$domain} does not have a load balancer, run: php artisan blacksmith:balancer {name} --site={$domain}");
             }
 
-            foreach ($siteConfigs as $config) {
-                $siteId = $config['id'];
+            $pool = $this->state()->pool($domain);
 
-                $forge->post("servers/$serverId/sites/$siteId/deployment/deploy");
+            foreach (EnvFile::scaleWarnings($this->blueprints()->env($domain, $pool['primary'])) as $warning) {
+                $this->warn($warning);
+            }
 
-                $this->info('Site deployment triggered.');
+            if ($remove = $this->option('remove')) {
+                return $this->removeNodes($forge, $balancer, $plan, $domain, $remove);
+            }
+
+            if (is_null($this->option('to'))) {
+                $this->line("{$domain} is balanced across: ".implode(', ', $pool['nodes']));
+
+                return self::SUCCESS;
+            }
+
+            $target = (int) $this->option('to');
+            $current = count($pool['nodes']);
+
+            if ($target < 1) {
+                throw new RuntimeException('A site needs at least one node.');
+            }
+
+            if ($target < $current) {
+                $removable = array_values(array_diff($pool['nodes'], [$pool['primary']]));
+
+                return $this->removeNodes($forge, $balancer, $plan, $domain, array_slice($removable, -($current - $target)));
+            }
+
+            if ($target === $current) {
+                $this->info("{$domain} already has {$current} node(s).");
+
+                return self::SUCCESS;
+            }
+
+            $profile = $this->option('profile') ?? $this->state()->instance($pool['primary'])['profile'];
+            $build->reportUsing($this->reporter());
+
+            for ($i = $current; $i < $target; $i++) {
+                $node = $this->state()->nextNodeName($domain);
+
+                $build->handle($node, $profile, [$domain], $plan, null, null, 'web');
+
+                $this->state()->putPool($domain, [
+                    'nodes' => array_merge($this->state()->pool($domain)['nodes'], [$node]),
+                ]);
+            }
+
+            $balancer->handle($domain, $plan);
+        } catch (RuntimeException $exception) {
+            return $this->failWith($exception);
+        }
+
+        $this->info("{$domain} is balanced across: ".implode(', ', $this->state()->pool($domain)['nodes']));
+
+        return self::SUCCESS;
+    }
+
+    protected function removeNodes(Forge $forge, ConfigureBalancer $balancer, Plan $plan, string $domain, array $nodes): int
+    {
+        $pool = $this->state()->pool($domain);
+
+        foreach ($nodes as $node) {
+            if (! in_array($node, $pool['nodes'], true)) {
+                throw new RuntimeException("{$node} is not a node of {$domain}.");
+            }
+
+            if ($node === $pool['primary']) {
+                throw new RuntimeException("{$node} is the primary node of {$domain} and runs its scheduler and workers, it can't be removed.");
             }
         }
 
-        return 0;
+        $balancer->handle($domain, $plan, $nodes);
+
+        if (! $this->option('force') && ! $this->confirm('Delete the server(s) for '.implode(', ', $nodes).'?')) {
+            $this->warn('The node(s) are marked down on the balancer but were kept.');
+
+            return self::SUCCESS;
+        }
+
+        $this->state()->putPool($domain, [
+            'nodes' => array_values(array_diff($pool['nodes'], $nodes)),
+        ]);
+
+        $balancer->handle($domain, $plan);
+
+        foreach ($nodes as $node) {
+            $instance = $this->state()->instance($node);
+
+            $plan->step("{$node}: Delete Forge server", fn () => $forge->deleteServer($instance['server_id']));
+
+            if (! empty($instance['provider_id'])) {
+                $plan->step("{$node}: Destroy {$instance['provider']} server", fn () => $this->laravel->make(ServerProvider::class)->destroy($instance['provider_id']));
+            }
+
+            $this->state()->forgetInstance($node);
+        }
+
+        $this->info("{$domain} is balanced across: ".implode(', ', $this->state()->pool($domain)['nodes']));
+
+        return self::SUCCESS;
     }
 }
