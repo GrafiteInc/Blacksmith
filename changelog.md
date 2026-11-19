@@ -3,6 +3,24 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.0.0] - 2026-11-19
+
+### Docs(replace)
+- document replace command workflow
+
+### Test(replace)
+- add replace tests and shared server mock helper
+
+### Feat(replace)
+- add blacksmith
+- add state helpers and env warnings for replacements
+
+### Refactor(scale)
+- extract server deletion into DestroyInstance
+
+### Feature
+- overhaul for new version
+
 ## [v2.0.0] - Unreleased
 
 ### Breaking
