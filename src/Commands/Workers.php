@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\SyncWorkers;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use RuntimeException;
 
 class Workers extends BlacksmithCommand
@@ -29,7 +30,7 @@ class Workers extends BlacksmithCommand
      *
      * @return int
      */
-    public function handle(SyncWorkers $workers)
+    public function handle(SyncWorkers $workers, ForgeGateway $forge)
     {
         $action = $this->argument('action');
 
@@ -54,13 +55,17 @@ class Workers extends BlacksmithCommand
                         continue;
                     }
 
+                    if (! $site = $forge->site($serverId, $siteId)) {
+                        throw new RuntimeException("{$instance} {$domain}: Site {$siteId} was not found on Forge, run blacksmith:localize to refresh state.json.");
+                    }
+
                     match ($action) {
                         'up' => $role === 'primary'
-                            ? $workers->sync($serverId, $siteId, $this->blueprints()->site($domain)['workers'], $plan, $label)
+                            ? $workers->sync($serverId, $site, $this->blueprints()->site($domain)['workers'], $plan, $label)
                             : $this->line($label.'Skipped, workers only run on the primary node.'),
-                        'down' => $workers->down($serverId, $siteId, $plan, $label),
-                        'restart' => $workers->restart($serverId, $siteId, $plan, $label),
-                        'status' => $this->status($label, $workers->status($serverId, $siteId)),
+                        'down' => $workers->down($serverId, $site, $plan, $label),
+                        'restart' => $workers->restart($serverId, $site, $plan, $label),
+                        'status' => $this->status($label, $workers->status($serverId, $site)),
                     };
                 }
             }

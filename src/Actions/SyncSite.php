@@ -3,11 +3,12 @@
 namespace Grafite\Blacksmith\Actions;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\Php;
 use Grafite\Blacksmith\Support\Plan;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Site;
 
 /**
@@ -35,7 +36,7 @@ class SyncSite
     ];
 
     public function __construct(
-        protected Forge $forge,
+        protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
         protected StateRepository $state,
         protected SyncWorkers $workers,
@@ -75,7 +76,7 @@ class SyncSite
             }
 
             if ($should('workers')) {
-                $this->workers->sync($serverId, $siteId, $role === 'primary' ? $blueprint['workers'] : [], $plan, $label);
+                $this->workers->sync($serverId, $site, $role === 'primary' ? $blueprint['workers'] : [], $plan, $label);
             }
 
             if ($should('quick_deploy') && (bool) $blueprint['quick_deploy'] !== (bool) $site?->quickDeploy) {
@@ -126,22 +127,19 @@ class SyncSite
             $plan->step("{$instance}: Remove the default site", fn () => $this->forge->deleteSite($serverId, $default->id));
         }
 
-        $payload = [
-            'domain' => $domain,
-            'aliases' => $blueprint['aliases'],
-            'project_type' => $blueprint['project_type'],
-            'directory' => $blueprint['directory'],
-            'isolated' => false,
-        ];
-
-        if ($role !== 'balancer') {
-            $payload['php_version'] = $blueprint['php_version'];
-        }
-
-        $site = $plan->step($label.'Create site', fn () => $this->forge->createSite($serverId, $payload, true));
+        $site = $plan->step($label.'Create site', fn () => $role === 'balancer'
+            ? $this->forge->createBalancer($serverId, [
+                'domain' => $domain,
+                'balancer_method' => $this->state->pool($domain)['method'] ?? Defaults::get('balancer.method', 'round_robin'),
+            ])
+            : $this->forge->createSite($serverId, static::createPayload($blueprint)));
 
         if ($site) {
             $this->state->setSiteId($instance, $domain, $site->id);
+        }
+
+        if (! empty($blueprint['aliases'])) {
+            $plan->step($label.'Add aliases '.implode(', ', $blueprint['aliases']), fn () => $this->forge->syncAliases($serverId, $site->id, $domain, $blueprint['aliases']));
         }
 
         return [$site, true];
@@ -150,35 +148,95 @@ class SyncSite
     protected function updateSite(int $serverId, Site $site, array $blueprint, string $role, Plan $plan, string $label): void
     {
         $aliases = collect($blueprint['aliases'])->sort()->values()->toArray();
-        $current = collect($site->aliases ?? [])->sort()->values()->toArray();
+        $current = collect(array_diff($site->aliases ?? [], [$site->name]))->sort()->values()->toArray();
 
-        if ($site->directory !== $blueprint['directory'] || $aliases !== $current) {
-            $plan->step($label.'Update directory and aliases', fn () => $this->forge->updateSite($serverId, $site->id, [
+        if ($aliases !== $current) {
+            $plan->step($label.'Update aliases', fn () => $this->forge->syncAliases($serverId, $site->id, $site->name, $blueprint['aliases']));
+        }
+
+        if ($role === 'balancer') {
+            return;
+        }
+
+        if ($site->webDirectory && $site->webDirectory !== $blueprint['directory']) {
+            $plan->step($label."Change web directory to {$blueprint['directory']}", fn () => $this->forge->updateSite($serverId, $site->id, [
                 'directory' => $blueprint['directory'],
-                'aliases' => $blueprint['aliases'],
             ]));
         }
 
-        if ($role !== 'balancer' && $site->phpVersion && $site->phpVersion !== $blueprint['php_version']) {
-            $plan->step($label."Change PHP to {$blueprint['php_version']}", fn () => $this->forge->changeSitePHPVersion($serverId, $site->id, $blueprint['php_version']));
+        if ($site->phpVersion && $site->phpVersion !== $blueprint['php_version']) {
+            $plan->step($label."Change PHP to {$blueprint['php_version']}", fn () => $this->forge->updateSite($serverId, $site->id, [
+                'php_version' => $blueprint['php_version'],
+            ]));
         }
+    }
+
+    /**
+     * The v2 create site payload, the repository is installed as part of it.
+     */
+    public static function createPayload(array $blueprint): array
+    {
+        $payload = [
+            'name' => $blueprint['domain'],
+            'type' => static::siteType($blueprint['project_type'] ?? null),
+            'web_directory' => $blueprint['directory'],
+            'is_isolated' => false,
+            'php_version' => $blueprint['php_version'],
+        ];
+
+        if ($repository = $blueprint['repository'] ?? null) {
+            $repository = static::repository($repository);
+
+            $payload += [
+                'source_control_provider' => $repository['provider'],
+                'repository' => $repository['repository'],
+                'branch' => $repository['branch'],
+                'install_composer_dependencies' => (bool) $repository['composer'],
+            ];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * v1 project types were php and html, v2 has a type per framework. Sites are Laravel apps unless the blueprint says otherwise.
+     */
+    public static function siteType(?string $type): string
+    {
+        return match ($type) {
+            null, '' => Defaults::get('site.project_type', 'laravel'),
+            'html' => 'static-html',
+            default => $type,
+        };
+    }
+
+    /**
+     * A blueprint repository with the configured defaults filled in.
+     */
+    public static function repository(array $repository): array
+    {
+        return array_replace(['provider' => 'github', 'repository' => null, 'branch' => 'main', 'composer' => true], Defaults::section('repository'), $repository);
     }
 
     protected function syncRepository(int $serverId, ?Site $site, bool $created, array $repository, Plan $plan, string $label): void
     {
-        $repository = array_replace(['provider' => 'github', 'branch' => 'main', 'composer' => true], $repository);
+        $repository = static::repository($repository);
 
-        if ($created || empty($site?->repository)) {
-            $plan->step($label."Install repository {$repository['repository']}#{$repository['branch']}", fn () => $this->forge->installGitRepositoryOnSite($serverId, $site->id, $repository, true));
+        if ($created || ! $site) {
+            return;
+        }
+
+        $current = ForgeGateway::siteRepository($site);
+
+        if (! $current || $current['repository'] !== $repository['repository']) {
+            $plan->note($label."Forge can't change a site's repository after it is created, delete the site and run update-server to recreate it with {$repository['repository']}.");
 
             return;
         }
 
-        if ($site->repository !== $repository['repository'] || $site->repositoryBranch !== $repository['branch']) {
-            $plan->step($label."Point repository at {$repository['repository']}#{$repository['branch']}", fn () => $this->forge->updateSiteGitRepository($serverId, $site->id, [
-                'provider' => $repository['provider'],
-                'repository' => $repository['repository'],
-                'branch' => $repository['branch'],
+        if ($current['branch'] !== $repository['branch']) {
+            $plan->step($label."Switch branch to {$repository['branch']}", fn () => $this->forge->updateSite($serverId, $site->id, [
+                'repository_branch' => $repository['branch'],
             ]));
         }
     }
@@ -208,18 +266,19 @@ class SyncSite
 
     protected function syncScheduler(int $serverId, string $domain, bool $enabled, Plan $plan, string $label): void
     {
-        $job = collect($this->forge->jobs($serverId))->first(fn ($job) => static::isSchedulerFor($job->command, $domain));
+        $job = collect($this->forge->scheduledJobs($serverId))->first(fn ($job) => static::isSchedulerFor($job->command, $domain));
 
         if ($enabled && ! $job) {
-            $plan->step($label.'Create scheduler', fn () => $this->forge->createJob($serverId, [
-                'command' => Php::binary($this->blueprints->site($domain)['php_version'])." /home/forge/{$domain}/artisan schedule:run",
-                'frequency' => 'minutely',
-                'user' => 'forge',
-            ], false));
+            $plan->step($label.'Create scheduler', fn () => $this->forge->createScheduledJob($serverId, [
+                'name' => "{$domain} scheduler",
+                'command' => Php::binary($this->blueprints->site($domain)['php_version']).' /home/'.Defaults::user()."/{$domain}/artisan schedule:run",
+                'frequency' => Defaults::get('scheduler.frequency', 'minutely'),
+                'user' => Defaults::user(),
+            ]));
         }
 
         if (! $enabled && $job) {
-            $plan->step($label.'Remove scheduler', fn () => $this->forge->deleteJob($serverId, $job->id));
+            $plan->step($label.'Remove scheduler', fn () => $this->forge->deleteScheduledJob($serverId, $job->id));
         }
     }
 
@@ -231,15 +290,13 @@ class SyncSite
             return;
         }
 
-        if (! $created && $site?->isSecured) {
+        if (! $created && $site?->https) {
             return;
         }
 
         $domains = $blueprint['ssl_domains'] ?: array_merge([$blueprint['domain']], $blueprint['aliases']);
 
-        $plan->step($label.'Request Let\'s Encrypt certificate for '.implode(', ', $domains), fn () => $this->forge->obtainLetsEncryptCertificate($serverId, $site->id, [
-            'domains' => $domains,
-        ], false));
+        $plan->step($label.'Request Let\'s Encrypt certificate for '.implode(', ', $domains), fn () => $this->forge->obtainLetsEncryptCertificate($serverId, $site->id, $domains));
     }
 
     protected function syncRedirects(int $serverId, ?int $siteId, array $redirects, Plan $plan, string $label): void
@@ -261,7 +318,7 @@ class SyncSite
             }
 
             foreach ($desired as $rule) {
-                $this->forge->createRedirectRule($serverId, $siteId, $rule, false);
+                $this->forge->createRedirectRule($serverId, $siteId, $rule);
             }
         });
     }
@@ -278,13 +335,16 @@ class SyncSite
             return;
         }
 
-        $normalize = fn ($rule) => [
+        $existing = $siteId ? collect($this->forge->securityRules($serverId, $siteId)) : collect();
+
+        // API v2 leaves credentials out of security rules, users are only compared when Forge sends them.
+        $withUsers = $existing->every(fn ($rule) => array_key_exists('credentials', $rule->attributes));
+
+        $normalize = fn ($rule) => array_filter([
             'name' => $rule['name'],
             'path' => $rule['path'] ?? null,
-            'users' => collect($rule['credentials'] ?? [])->pluck('username')->sort()->values()->toArray(),
-        ];
-
-        $existing = $siteId ? collect($this->forge->securityRules($serverId, $siteId)) : collect();
+            'users' => $withUsers ? collect($rule['credentials'] ?? [])->pluck('username')->sort()->values()->toArray() : null,
+        ], fn ($value) => ! is_null($value));
 
         $signature = fn ($rules) => $rules->map(fn ($rule) => json_encode($rule))->sort()->values()->toArray();
 
@@ -298,7 +358,7 @@ class SyncSite
             }
 
             foreach ($desired as $rule) {
-                $this->forge->createSecurityRule($serverId, $siteId, $rule, false);
+                $this->forge->createSecurityRule($serverId, $siteId, $rule);
             }
         });
     }

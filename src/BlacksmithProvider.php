@@ -12,6 +12,7 @@ use Grafite\Blacksmith\Commands\Replace;
 use Grafite\Blacksmith\Commands\Scale;
 use Grafite\Blacksmith\Commands\UpdateServer;
 use Grafite\Blacksmith\Commands\Workers;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\DigitalOceanProvider;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
@@ -44,6 +45,11 @@ class BlacksmithProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/blacksmith.php', 'blacksmith');
 
+        // mergeConfigFrom is shallow, so a published config still gets defaults added in later versions.
+        $package = require __DIR__.'/../config/blacksmith.php';
+
+        config(['blacksmith.defaults' => array_replace_recursive($package['defaults'], (array) config('blacksmith.defaults', []))]);
+
         $this->app->singleton(Forge::class, function () {
             if (empty(config('blacksmith.forge_token'))) {
                 throw new RuntimeException('Set BLACKSMITH_FORGE_TOKEN to your Forge API token.');
@@ -51,6 +57,11 @@ class BlacksmithProvider extends ServiceProvider
 
             return (new Forge(config('blacksmith.forge_token')))->setTimeout(300);
         });
+
+        $this->app->singleton(ForgeGateway::class, fn ($app) => new ForgeGateway(
+            $app->make(Forge::class),
+            config('blacksmith.forge_organization'),
+        ));
 
         $this->app->singleton(BlueprintRepository::class, fn () => new BlueprintRepository(config('blacksmith.path')));
 

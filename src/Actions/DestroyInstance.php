@@ -2,10 +2,10 @@
 
 namespace Grafite\Blacksmith\Actions;
 
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Plan;
-use Laravel\Forge\Forge;
 
 /**
  * Delete an instance's Forge server and provider server, then forget it.
@@ -13,7 +13,7 @@ use Laravel\Forge\Forge;
  */
 class DestroyInstance
 {
-    public function __construct(protected Forge $forge, protected StateRepository $state) {}
+    public function __construct(protected ForgeGateway $forge, protected StateRepository $state) {}
 
     public function handle(string $name, Plan $plan): void
     {

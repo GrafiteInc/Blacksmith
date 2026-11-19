@@ -4,7 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\SyncServer;
 use Grafite\Blacksmith\Actions\SyncSite;
-use Laravel\Forge\Forge;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use RuntimeException;
 
 class UpdateServer extends BlacksmithCommand
@@ -33,7 +33,7 @@ class UpdateServer extends BlacksmithCommand
      *
      * @return int
      */
-    public function handle(Forge $forge, SyncServer $server, SyncSite $site)
+    public function handle(ForgeGateway $forge, SyncServer $server, SyncSite $site)
     {
         $only = array_filter(array_map('trim', explode(',', (string) $this->option('only'))));
         $unknown = array_diff($only, array_merge(['server'], SyncSite::SECTIONS));
@@ -69,7 +69,7 @@ class UpdateServer extends BlacksmithCommand
                     if ($this->option('deploy') && $this->state()->roleFor($instance, $domain) !== 'balancer') {
                         $serverId = $this->state()->instance($instance)['server_id'];
 
-                        $plan->step("{$instance} {$domain}: Deploy", fn () => $forge->deploySite($serverId, $siteId, false));
+                        $plan->step("{$instance} {$domain}: Deploy", fn () => $forge->deploySite($serverId, $siteId));
                     }
                 }
             }

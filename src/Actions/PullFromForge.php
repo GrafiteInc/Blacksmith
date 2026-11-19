@@ -3,12 +3,13 @@
 namespace Grafite\Blacksmith\Actions;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\EnvFile;
 use Grafite\Blacksmith\Support\ReportsProgress;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Server;
 use Laravel\Forge\Resources\ServerTypes;
 use Laravel\Forge\Resources\Site;
@@ -24,14 +25,15 @@ class PullFromForge
     use ReportsProgress;
 
     public function __construct(
-        protected Forge $forge,
+        protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
         protected StateRepository $state,
+        protected SyncWorkers $workers,
     ) {}
 
     public function server(int|string $serverId, ?string $instance = null, ?string $profile = null): string
     {
-        $server = $this->forge->server($serverId);
+        $server = $this->forge->server((int) $serverId);
 
         $instance ??= $this->state->instanceForServer($server->id) ?? Str::slug($server->name);
         $existing = $this->state->hasInstance($instance) ? $this->state->instance($instance) : [];
@@ -58,7 +60,7 @@ class PullFromForge
             return $instance;
         }
 
-        $jobs = collect($this->forge->jobs($server->id));
+        $jobs = collect($this->forge->scheduledJobs($server->id));
 
         foreach ($sites as $site) {
             $this->pullSite($instance, $server, $site, $jobs);
@@ -82,16 +84,14 @@ class PullFromForge
             ? $this->blueprints->profile($name)
             : $this->blueprints::defaultProfile($server->type ?: ServerTypes::APP);
 
-        $attributes = $server->attributes;
-
         $this->blueprints->saveProfile($name, array_replace($current, array_filter([
             'type' => $server->type,
-            'ubuntu_version' => $attributes['ubuntu_version'] ?? null,
-            'php_version' => $attributes['php_version'] ?? null,
-            'php_cli_version' => $attributes['php_cli_version'] ?? $attributes['php_version'] ?? null,
-            'database_type' => $attributes['database_type'] ?? null,
+            'ubuntu_version' => $server->ubuntuVersion,
+            'php_version' => $server->phpVersion,
+            'php_cli_version' => $server->phpCliVersion ?? $server->phpVersion,
+            'database_type' => $server->databaseType,
         ]), [
-            'opcache' => ($attributes['opcache_status'] ?? null) === 'enabled',
+            'opcache' => $server->opcacheStatus === 'enabled',
         ]));
     }
 
@@ -118,25 +118,26 @@ class PullFromForge
         }
 
         $existing = $this->blueprints->hasSite($domain) ? $this->blueprints->site($domain) : $this->blueprints::defaultSite($domain);
-        $aliases = array_values($site->aliases ?? []);
+        $aliases = array_values(array_diff($site->aliases ?? [], [$domain]));
+        $repository = ForgeGateway::siteRepository($site);
 
         $this->blueprints->saveSite($domain, array_replace($existing, [
             'domain' => $domain,
             'aliases' => $aliases,
-            'directory' => $site->directory,
-            'project_type' => $site->projectType ?: 'php',
-            'php_version' => $site->phpVersion,
-            'repository' => $site->repository ? [
-                'provider' => $site->repositoryProvider,
-                'repository' => $site->repository,
-                'branch' => $site->repositoryBranch,
-                'composer' => $existing['repository']['composer'] ?? true,
-            ] : null,
-            'lets_encrypt' => (bool) $site->isSecured,
+            'directory' => $site->webDirectory ?: $existing['directory'],
+            'project_type' => $site->appType ?: $existing['project_type'],
+            'php_version' => $site->phpVersion ?: ($existing['php_version'] ?? null),
+            'repository' => $repository ? SyncSite::repository(array_filter([
+                'provider' => $repository['provider'],
+                'repository' => $repository['repository'],
+                'branch' => $repository['branch'],
+                'composer' => $existing['repository']['composer'] ?? null,
+            ], fn ($value) => ! is_null($value))) : null,
+            'lets_encrypt' => (bool) $site->https,
             'ssl_domains' => array_values(array_unique(array_merge([$domain], $aliases))),
             'quick_deploy' => (bool) $site->quickDeploy,
             'scheduler' => $jobs->contains(fn ($job) => SyncSite::isSchedulerFor($job->command, $domain)),
-            'workers' => $this->pullWorkers($server->id, $site->id),
+            'workers' => $this->workers->pull($server->id, $site),
             'redirects' => collect($this->forge->redirectRules($server->id, $site->id))->map(fn ($rule) => [
                 'from' => $rule->from,
                 'to' => $rule->to,
@@ -163,14 +164,6 @@ class PullFromForge
         $this->report("{$instance} {$domain}: Kept the blueprint from {$this->state->primaryInstanceFor($domain)}");
     }
 
-    protected function pullWorkers(int $serverId, int $siteId): array
-    {
-        return collect($this->forge->workers($serverId, $siteId))
-            ->map(fn ($worker) => SyncWorkers::normalize($worker->attributes))
-            ->values()
-            ->toArray();
-    }
-
     /**
      * Forge never returns passwords, so keep any we already have for the same user.
      */
@@ -182,11 +175,19 @@ class PullFromForge
         return collect($this->forge->securityRules($serverId, $siteId))->map(fn ($rule) => [
             'name' => $rule->name,
             'path' => $rule->path,
-            'credentials' => collect($rule->credentials ?? [])->map(fn ($credential) => [
+            'credentials' => collect($rule->attributes['credentials'] ?? $this->existingUsers($existing, $rule->name))->map(fn ($credential) => [
                 'username' => $credential['username'],
                 'password' => $passwords->get($rule->name.'|'.$credential['username'], ''),
             ])->values()->toArray(),
         ])->values()->toArray();
+    }
+
+    /**
+     * API v2 leaves credentials out of security rules, so keep the users we already know.
+     */
+    protected function existingUsers(array $existing, ?string $name): array
+    {
+        return collect($existing)->firstWhere('name', $name)['credentials'] ?? [];
     }
 
     /**
@@ -198,7 +199,12 @@ class PullFromForge
 
         $this->state->setSiteId($instance, $domain, $site->id);
 
-        $nodes = collect($this->forge->get("servers/{$server->id}/sites/{$site->id}/balancing")['nodes'] ?? []);
+        $nodes = collect($this->forge->balancingNodes($server->id, $site->id))->map(fn ($node) => [
+            'server_id' => (int) $node->serverId,
+            'weight' => $node->weight,
+            'backup' => $node->backup,
+            'port' => $node->port,
+        ]);
 
         if ($nodes->isEmpty()) {
             $this->report("{$instance} {$domain}: Balancer has no nodes");
@@ -219,9 +225,9 @@ class PullFromForge
             'primary' => $names->first(),
             'nodes' => $names->toArray(),
             'options' => $nodes->mapWithKeys(fn ($node, $index) => [$names[$index] => [
-                'weight' => $node['weight'] ?? 1,
-                'backup' => (bool) ($node['backup'] ?? false),
-                'port' => $node['port'] ?? 80,
+                'weight' => $node['weight'] ?? Defaults::get('balancer.weight', 1),
+                'backup' => (bool) ($node['backup'] ?? Defaults::get('balancer.backup', false)),
+                'port' => $node['port'] ?? Defaults::get('balancer.port', 80),
             ]])->toArray(),
         ]);
 

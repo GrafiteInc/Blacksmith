@@ -4,8 +4,8 @@ namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\PullFromForge;
 use Grafite\Blacksmith\Blueprint\LegacyMigrator;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
 use RuntimeException;
 
 class Localize extends BlacksmithCommand
@@ -72,7 +72,7 @@ class Localize extends BlacksmithCommand
             throw new RuntimeException('Pass --server=ID to choose the Forge server to pull.');
         }
 
-        $servers = collect($this->laravel->make(Forge::class)->servers())
+        $servers = collect($this->laravel->make(ForgeGateway::class)->servers())
             ->mapWithKeys(fn ($server) => [$server->id => "{$server->name} ({$server->ipAddress})"]);
 
         if ($servers->isEmpty()) {

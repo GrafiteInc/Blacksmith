@@ -3,15 +3,15 @@
 namespace Grafite\Blacksmith\Actions;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Plan;
-use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\ServerTypes;
 
 class SyncServer
 {
     public function __construct(
-        protected Forge $forge,
+        protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
         protected StateRepository $state,
     ) {}
@@ -36,7 +36,7 @@ class SyncServer
             }
         }
 
-        $opcache = ($server->attributes['opcache_status'] ?? null) === 'enabled';
+        $opcache = $server->opcacheStatus === 'enabled';
 
         if ((bool) $profile['opcache'] !== $opcache) {
             $plan->step($label.($profile['opcache'] ? 'Enable' : 'Disable').' OPcache', fn () => $profile['opcache']
@@ -44,9 +44,6 @@ class SyncServer
                 : $this->forge->disableOPCache($serverId));
         }
 
-        $plan->step($label."Set upload limit {$profile['max_upload_size']}MB, execution time {$profile['max_execution_time']}s", fn () => $this->forge->updateServer($serverId, [
-            'max_upload_size' => $profile['max_upload_size'],
-            'max_execution_time' => $profile['max_execution_time'],
-        ]));
+        $plan->step($label."Set upload limit {$profile['max_upload_size']}MB, execution time {$profile['max_execution_time']}s", fn () => $this->forge->updatePhpLimits($serverId, (int) $profile['max_upload_size'], (int) $profile['max_execution_time']));
     }
 }

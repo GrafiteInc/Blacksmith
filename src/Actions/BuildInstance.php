@@ -2,9 +2,9 @@
 
 namespace Grafite\Blacksmith\Actions;
 
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Plan;
-use Laravel\Forge\Forge;
 
 /**
  * A new server with the given site blueprints pushed to it and deployed.
@@ -12,7 +12,7 @@ use Laravel\Forge\Forge;
 class BuildInstance
 {
     public function __construct(
-        protected Forge $forge,
+        protected ForgeGateway $forge,
         protected StateRepository $state,
         protected ProvisionServer $provision,
         protected SyncServer $server,
@@ -48,7 +48,7 @@ class BuildInstance
             if ($deploy && $siteId && $siteRole !== 'balancer') {
                 $serverId = $this->state->instance($name)['server_id'];
 
-                $plan->step("{$name} {$domain}: Deploy", fn () => $this->forge->deploySite($serverId, $siteId, false));
+                $plan->step("{$name} {$domain}: Deploy", fn () => $this->forge->deploySite($serverId, $siteId));
             }
         }
 

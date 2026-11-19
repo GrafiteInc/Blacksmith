@@ -3,13 +3,13 @@
 namespace Grafite\Blacksmith\Actions;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Poll;
 use Grafite\Blacksmith\Support\RemoteShell;
 use Grafite\Blacksmith\Support\ReportsProgress;
 use Illuminate\Support\Str;
-use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\ServerProviders;
 use Laravel\Forge\Resources\ServerTypes;
 use RuntimeException;
@@ -23,7 +23,7 @@ class ProvisionServer
     use ReportsProgress;
 
     public function __construct(
-        protected Forge $forge,
+        protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
         protected StateRepository $state,
         protected RemoteShell $shell,
@@ -85,7 +85,7 @@ class ProvisionServer
         }
 
         $this->report("{$instance}: Creating the Forge server");
-        $server = $this->forge->createServer($payload);
+        $server = $this->forge->createCustomServer($payload);
 
         $this->state->putInstance($instance, array_replace($attributes, [
             'server_id' => $server->id,
