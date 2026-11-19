@@ -4,10 +4,9 @@ namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\BuildInstance;
 use Grafite\Blacksmith\Actions\ConfigureBalancer;
-use Grafite\Blacksmith\ServerProviders\ServerProvider;
+use Grafite\Blacksmith\Actions\DestroyInstance;
 use Grafite\Blacksmith\Support\EnvFile;
 use Grafite\Blacksmith\Support\Plan;
-use Laravel\Forge\Forge;
 use RuntimeException;
 
 class Scale extends BlacksmithCommand
@@ -36,7 +35,7 @@ class Scale extends BlacksmithCommand
      *
      * @return int
      */
-    public function handle(Forge $forge, BuildInstance $build, ConfigureBalancer $balancer)
+    public function handle(BuildInstance $build, ConfigureBalancer $balancer, DestroyInstance $destroy)
     {
         $domain = $this->argument('site');
         $plan = $this->plan();
@@ -55,7 +54,7 @@ class Scale extends BlacksmithCommand
             }
 
             if ($remove = $this->option('remove')) {
-                return $this->removeNodes($forge, $balancer, $plan, $domain, $remove);
+                return $this->removeNodes($balancer, $destroy, $plan, $domain, $remove);
             }
 
             if (is_null($this->option('to'))) {
@@ -74,7 +73,7 @@ class Scale extends BlacksmithCommand
             if ($target < $current) {
                 $removable = array_values(array_diff($pool['nodes'], [$pool['primary']]));
 
-                return $this->removeNodes($forge, $balancer, $plan, $domain, array_slice($removable, -($current - $target)));
+                return $this->removeNodes($balancer, $destroy, $plan, $domain, array_slice($removable, -($current - $target)));
             }
 
             if ($target === $current) {
@@ -106,7 +105,7 @@ class Scale extends BlacksmithCommand
         return self::SUCCESS;
     }
 
-    protected function removeNodes(Forge $forge, ConfigureBalancer $balancer, Plan $plan, string $domain, array $nodes): int
+    protected function removeNodes(ConfigureBalancer $balancer, DestroyInstance $destroy, Plan $plan, string $domain, array $nodes): int
     {
         $pool = $this->state()->pool($domain);
 
@@ -135,15 +134,7 @@ class Scale extends BlacksmithCommand
         $balancer->handle($domain, $plan);
 
         foreach ($nodes as $node) {
-            $instance = $this->state()->instance($node);
-
-            $plan->step("{$node}: Delete Forge server", fn () => $forge->deleteServer($instance['server_id']));
-
-            if (! empty($instance['provider_id'])) {
-                $plan->step("{$node}: Destroy {$instance['provider']} server", fn () => $this->laravel->make(ServerProvider::class)->destroy($instance['provider_id']));
-            }
-
-            $this->state()->forgetInstance($node);
+            $destroy->handle($node, $plan);
         }
 
         $this->info("{$domain} is balanced across: ".implode(', ', $this->state()->pool($domain)['nodes']));
