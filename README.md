@@ -20,7 +20,7 @@ The Backsmith package is a easy to use tool for handling long term projects on L
 
 | Laravel Version | Package Tag | Supported |
 |-----------------|-------------|-----------|
-| ^11.x-^13.x | 2.x | yes |
+| ^12.x-^13.x | 2.x (Forge API v2) | yes |
 | ^11.x-^12.x | 1.x | no |
 
 ### Installation
@@ -44,9 +44,32 @@ Then set these in your `.env`:
 
 ```
 BLACKSMITH_FORGE_TOKEN=
+BLACKSMITH_FORGE_ORGANIZATION=      # optional when the token only has one organization
 BLACKSMITH_SERVER_PROVIDER_TOKEN=   # DigitalOcean, for creating servers
 BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # must be one of your DigitalOcean SSH keys
 ```
+
+### Forge API token
+
+Blacksmith uses the Forge API v2, where everything belongs to an organization. Create a token at [forge.laravel.com/profile/api](https://forge.laravel.com/profile/api) with these scopes:
+
+| Scope | Used for |
+|-------|----------|
+| `organization:view` | Finding your organization when `BLACKSMITH_FORGE_ORGANIZATION` is empty |
+| `server:view`, `server:create`, `server:delete` | Reading, creating and deleting servers |
+| `server:manage-php` | PHP versions, OPcache, upload size and execution time |
+| `server:create-daemons`, `server:delete-daemons` | Queue workers (background processes) |
+| `server:create-schedulers`, `server:delete-schedulers` | The scheduler |
+| `site:create`, `site:delete`, `site:meta` | Sites, aliases and domains |
+| `site:manage-deploys`, `site:manage-environment` | Deploy script, deployments, quick deploy and `.env` |
+| `site:manage-ssl`, `site:manage-redirects`, `site:manage-security` | Certificates, redirects and security rules |
+| `site:manage-project` | Load balancing |
+
+`BLACKSMITH_FORGE_ORGANIZATION` is the slug in your Forge URLs. If the token can reach several organizations, Blacksmith asks you to set it.
+
+### Defaults
+
+Every default Blacksmith uses lives under `defaults` in `config/blacksmith.php`. That includes server profiles (Ubuntu, PHP, upload limits, OPcache), site blueprints (site type, web directory, PHP), repositories, queue workers, the scheduler, load balancing, alias domains, certificates and the Forge user. New profiles and blueprints start from these values. What's already saved in `.blacksmith` is kept. Keys missing from a published config fall back to the package's values, so new defaults reach you on upgrade.
 
 ## How it works
 
@@ -113,7 +136,21 @@ php artisan blacksmith:replace prod --finish     # deletes the old server (kept 
 
 At cutover the new server takes over the name `prod`, so `.env.prod` overrides, pools and every other command keep working. If the instance sits behind a load balancer, DNS doesn't change: cutover points the balancer at the new server. Run `--abort` before cutover to delete the new server and start over.
 
-Blacksmith copies what's in the blueprints. It does **not** copy databases, files in `storage/`, daemons, firewall rules, server SSH keys or cron jobs other than the scheduler, so move those yourself before cutover. `replace` warns you when the env points at a local database or disk.
+Blacksmith copies what's in the blueprints. It does **not** copy databases, files in `storage/`, background processes other than queue workers, firewall rules, server SSH keys or cron jobs other than the scheduler, so move those yourself before cutover. `replace` warns you when the env points at a local database or disk.
+
+### Queue workers
+
+Forge API v2 has no queue worker endpoints, so each worker in `site.json` runs as a Forge **background process** in the site's directory:
+
+```
+php8.4 artisan queue:work redis --queue=default --sleep=10 --timeout=60 --tries=3
+```
+
+A site's workers are the background processes in its directory running `artisan queue:work`. Other background processes, like Horizon, are left alone. Workers are compared by command and process count, so changing a worker's `stopwaitsecs` alone does not recreate it.
+
+### Upgrading from the Forge API v1
+
+Create a new token with the scopes above and set `BLACKSMITH_FORGE_ORGANIZATION` if you have more than one organization. Then run `php artisan blacksmith:localize` to refresh the blueprints and `php artisan blacksmith:update-server --dry-run` to check nothing unexpected changes. Queue workers created through the v1 API are not visible to v2. If `workers status` shows none, run `workers up` and remove the old ones in Forge. The `daemon` worker option is gone, since `queue:work` always runs as a daemon.
 
 ### Upgrading from 1.x
 
