@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use Laravel\Forge\Resources\Worker;
 use Tests\TestCase;
 
 class WorkersTest extends TestCase
@@ -12,8 +11,9 @@ class WorkersTest extends TestCase
         $this->seedBlueprint();
 
         $forge = $this->forge();
-        $forge->shouldReceive('workers')->with(100, 200)->andReturn([new Worker(['id' => 1, 'connection' => 'redis', 'queue' => 'default', 'processes' => 2])]);
-        $forge->shouldNotReceive('createWorker', 'deleteWorker');
+        $forge->shouldReceive('site')->with(100, 200)->andReturn($this->site());
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn([$this->worker(1, ['connection' => 'redis', 'processes' => 2])]);
+        $forge->shouldNotReceive('createBackgroundProcess', 'deleteBackgroundProcess');
 
         $this->artisan('blacksmith:workers', ['action' => 'up'])
             ->expectsOutput('Workers already match.')
@@ -25,9 +25,18 @@ class WorkersTest extends TestCase
         $this->seedBlueprint();
 
         $forge = $this->forge();
-        $forge->shouldReceive('workers')->with(100, 200)->andReturn([new Worker(['id' => 1, 'connection' => 'database', 'queue' => 'default', 'processes' => 1])]);
-        $forge->shouldReceive('deleteWorker')->once()->with(100, 200, 1);
-        $forge->shouldReceive('createWorker')->once()->withArgs(fn ($server, $site, $worker) => $worker['connection'] === 'redis');
+        $forge->shouldReceive('site')->with(100, 200)->andReturn($this->site());
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn([
+            $this->worker(1, ['connection' => 'database']),
+            $this->worker(2, ['connection' => 'redis'], ['directory' => '/home/forge/other.com']),
+            $this->worker(3, [], ['command' => 'node server.js']),
+        ]);
+        $forge->shouldReceive('deleteBackgroundProcess')->once()->with(100, 1);
+        $forge->shouldReceive('createBackgroundProcess')->once()->withArgs(fn ($server, $payload) => $server === 100
+            && $payload['site_id'] === 200
+            && $payload['directory'] === '/home/forge/example.com'
+            && $payload['command'] === 'php artisan queue:work redis --queue=default --sleep=10 --timeout=60'
+            && $payload['processes'] === 2);
 
         $this->artisan('blacksmith:workers', ['action' => 'up', 'instance' => 'prod'])->assertSuccessful();
     }
@@ -37,15 +46,27 @@ class WorkersTest extends TestCase
         $this->seedBlueprint();
 
         $forge = $this->forge();
-        $forge->shouldReceive('workers')->with(100, 200)->andReturn([new Worker(['id' => 1, 'connection' => 'redis', 'queue' => 'default', 'processes' => 2, 'timeout' => 60, 'status' => 'running'])]);
-        $forge->shouldReceive('restartWorker')->once()->with(100, 200, 1, false);
-        $forge->shouldReceive('deleteWorker')->once()->with(100, 200, 1);
+        $forge->shouldReceive('site')->with(100, 200)->andReturn($this->site());
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn([$this->worker(1, ['connection' => 'redis', 'processes' => 2])]);
+        $forge->shouldReceive('restartBackgroundProcess')->once()->with(100, 1);
+        $forge->shouldReceive('deleteBackgroundProcess')->once()->with(100, 1);
 
         $this->artisan('blacksmith:workers', ['action' => 'restart'])->assertSuccessful();
         $this->artisan('blacksmith:workers', ['action' => 'down', '--site' => ['example.com']])->assertSuccessful();
         $this->artisan('blacksmith:workers', ['action' => 'status'])
-            ->expectsTable(['Connection', 'Queue', 'Processes', 'Timeout', 'Tries', 'PHP', 'Status'], [['redis', 'default', 2, 60, '-', '-', 'running']])
+            ->expectsTable(['Connection', 'Queue', 'Processes', 'Timeout', 'Tries', 'PHP', 'Status'], [['redis', 'default', 2, 60, '-', 'php', 'running']])
             ->assertSuccessful();
         $this->artisan('blacksmith:workers', ['action' => 'sideways'])->assertFailed();
+    }
+
+    public function test_a_site_missing_from_forge_fails()
+    {
+        $this->seedBlueprint();
+
+        $this->forge()->shouldReceive('site')->with(100, 200)->andReturn(null);
+
+        $this->artisan('blacksmith:workers', ['action' => 'status'])
+            ->expectsOutputToContain('Site 200 was not found on Forge')
+            ->assertFailed();
     }
 }

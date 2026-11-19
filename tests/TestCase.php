@@ -2,13 +2,16 @@
 
 namespace Tests;
 
+use Grafite\Blacksmith\Actions\SyncWorkers;
 use Grafite\Blacksmith\BlacksmithProvider;
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Sleep;
-use Laravel\Forge\Forge;
+use Laravel\Forge\Resources\BackgroundProcess;
 use Laravel\Forge\Resources\PHPVersion;
+use Laravel\Forge\Resources\ScheduledJob;
 use Laravel\Forge\Resources\Server;
 use Laravel\Forge\Resources\Site;
 use Mockery;
@@ -33,6 +36,13 @@ abstract class TestCase extends OrchestraTestCase
         $app['config']->set('blacksmith.path', $this->root);
         $app['config']->set('blacksmith.forge_token', 'test-token');
         $app['config']->set('blacksmith.poll_interval', 0);
+
+        // The fixtures are built around these, so bumping the shipped defaults doesn't break the suite.
+        $app['config']->set('blacksmith.defaults.server.ubuntu_version', '24.04');
+        $app['config']->set('blacksmith.defaults.server.php_version', 'php84');
+        $app['config']->set('blacksmith.defaults.server.php_cli_version', 'php84');
+        $app['config']->set('blacksmith.defaults.site.php_version', 'php84');
+        $app['config']->set('blacksmith.defaults.worker.php_version', 'php');
     }
 
     protected function setUp(): void
@@ -51,9 +61,9 @@ abstract class TestCase extends OrchestraTestCase
 
     protected function forge(): MockInterface
     {
-        $forge = Mockery::mock(Forge::class);
+        $forge = Mockery::mock(ForgeGateway::class);
 
-        $this->app->instance(Forge::class, $forge);
+        $this->app->instance(ForgeGateway::class, $forge);
 
         return $forge;
     }
@@ -63,11 +73,11 @@ abstract class TestCase extends OrchestraTestCase
      */
     protected function mockNewServer($forge, int $id, string $type = 'app')
     {
-        $forge->shouldReceive('createServer')->once()->ordered()->withArgs(fn ($payload) => $payload['provider'] === 'custom' && $payload['type'] === $type)
+        $forge->shouldReceive('createCustomServer')->once()->ordered()->withArgs(fn ($payload) => $payload['provider'] === 'custom' && $payload['type'] === $type)
             ->andReturnUsing(fn ($payload) => new Server(['id' => $id, 'name' => $payload['name'], 'type' => $type, 'provision_command' => "curl forge/{$id} | bash"]));
         $forge->shouldReceive('server')->with($id)->andReturn($this->server(['id' => $id, 'is_ready' => true, 'type' => $type]));
         $forge->shouldReceive('phpVersions')->with($id)->andReturn([new PHPVersion(['version' => 'php84'])]);
-        $forge->shouldReceive('updateServer')->with($id, Mockery::any());
+        $forge->shouldReceive('updatePhpLimits')->with($id, Mockery::any(), Mockery::any());
     }
 
     protected function blueprints(): BlueprintRepository
@@ -101,16 +111,35 @@ abstract class TestCase extends OrchestraTestCase
         return new Site(array_replace([
             'id' => 200,
             'name' => 'example.com',
+            'user' => 'forge',
             'aliases' => ['www.example.com'],
-            'directory' => '/public',
-            'project_type' => 'php',
+            'web_directory' => '/public',
+            'app_type' => 'laravel',
             'php_version' => 'php84',
-            'repository' => 'acme/example',
-            'repository_provider' => 'github',
-            'repository_branch' => 'main',
+            'repository' => ['provider' => 'github', 'url' => 'git@github.com:acme/example.git', 'branch' => 'main', 'status' => 'installed'],
             'quick_deploy' => false,
-            'is_secured' => true,
+            'https' => true,
         ], $attributes));
+    }
+
+    /**
+     * A queue worker background process in the example.com directory.
+     */
+    protected function worker(int $id, array $worker = [], array $attributes = []): BackgroundProcess
+    {
+        return new BackgroundProcess(array_replace([
+            'id' => $id,
+            'command' => SyncWorkers::toCommand($worker),
+            'user' => 'forge',
+            'directory' => '/home/forge/example.com',
+            'processes' => SyncWorkers::normalize($worker)['processes'],
+            'status' => 'running',
+        ], $attributes));
+    }
+
+    protected function schedulerJob(int $id, string $domain = 'example.com'): ScheduledJob
+    {
+        return new ScheduledJob(['id' => $id, 'command' => "php8.4 /home/forge/{$domain}/artisan schedule:run"]);
     }
 
     /**

@@ -60,7 +60,7 @@ class ProvisioningTest extends TestCase
         Process::fake(['*' => Process::result(output: '', errorOutput: 'apt is locked', exitCode: 1)]);
 
         $forge = $this->forge();
-        $forge->shouldNotReceive('createServer');
+        $forge->shouldNotReceive('createCustomServer');
 
         $this->artisan('blacksmith:make-server', ['instance' => 'broken', '--ip' => '198.51.100.6'])
             ->expectsOutputToContain('Unable to connect')
@@ -75,17 +75,18 @@ class ProvisioningTest extends TestCase
         $this->mockNewServer($forge, 800);
 
         $forge->shouldReceive('sites')->with(800)->andReturn([]);
-        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 801, 'repository' => null, 'is_secured' => false]));
-        $forge->shouldReceive('installGitRepositoryOnSite')->once();
+        $forge->shouldReceive('createSite')->once()->withArgs(fn ($server, $payload) => $payload['repository'] === 'acme/example')
+            ->andReturn($this->site(['id' => 801, 'https' => false]));
+        $forge->shouldReceive('syncAliases')->once();
         $forge->shouldReceive('updateSiteEnvironmentFile')->once();
         $forge->shouldReceive('updateSiteDeploymentScript')->once();
-        $forge->shouldReceive('jobs')->with(800)->andReturn([]);
-        $forge->shouldReceive('createJob')->once()->withArgs(fn ($server, $job) => $job['command'] === 'php8.4 /home/forge/example.com/artisan schedule:run');
-        $forge->shouldReceive('workers')->with(800, 801)->andReturn([]);
-        $forge->shouldReceive('createWorker')->once();
+        $forge->shouldReceive('scheduledJobs')->with(800)->andReturn([]);
+        $forge->shouldReceive('createScheduledJob')->once()->withArgs(fn ($server, $job) => $job['command'] === 'php8.4 /home/forge/example.com/artisan schedule:run');
+        $forge->shouldReceive('backgroundProcesses')->with(800)->andReturn([]);
+        $forge->shouldReceive('createBackgroundProcess')->once();
         $forge->shouldReceive('obtainLetsEncryptCertificate')->once();
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('deploySite')->once()->with(800, 801, false);
+        $forge->shouldReceive('deploySite')->once()->with(800, 801);
 
         $this->artisan('blacksmith:instance', ['name' => 'staging'])
             ->expectsOutputToContain('Instance staging is live at 203.0.113.1 with: example.com')
@@ -103,14 +104,14 @@ class ProvisioningTest extends TestCase
         $this->mockNewServer($forge, 900, 'loadbalancer');
 
         $forge->shouldReceive('sites')->with(900)->andReturn([]);
-        $forge->shouldReceive('createSite')->once()->withArgs(fn ($server, $payload) => ! isset($payload['php_version']))
-            ->andReturn($this->site(['id' => 901, 'is_secured' => false]));
+        $forge->shouldReceive('createBalancer')->once()->with(900, ['domain' => 'example.com', 'balancer_method' => 'least_conn'])
+            ->andReturn($this->site(['id' => 901, 'https' => false]));
+        $forge->shouldReceive('syncAliases')->once()->with(900, 901, 'example.com', ['www.example.com']);
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->with(900, 901, [
-            'servers' => [['id' => 100, 'weight' => 1, 'down' => false, 'backup' => false, 'port' => 80]],
-            'method' => 'least_conn',
-        ]);
-        $forge->shouldNotReceive('obtainLetsEncryptCertificate', 'createWorker', 'updateSiteEnvironmentFile');
+        $forge->shouldReceive('updateBalancingNodes')->once()->with(900, 901, [
+            ['server_id' => 100, 'weight' => 1, 'down' => false, 'backup' => false, 'port' => 80],
+        ], 'least_conn');
+        $forge->shouldNotReceive('createSite', 'obtainLetsEncryptCertificate', 'createBackgroundProcess', 'updateSiteEnvironmentFile');
 
         $this->artisan('blacksmith:balancer', ['name' => 'lb', '--method' => 'least_conn'])
             ->expectsOutputToContain('Point DNS at the balancer')
@@ -136,16 +137,16 @@ class ProvisioningTest extends TestCase
         $this->mockNewServer($forge, 1000);
 
         $forge->shouldReceive('sites')->with(1000)->andReturn([]);
-        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 1001, 'repository' => null, 'is_secured' => false]));
-        $forge->shouldReceive('installGitRepositoryOnSite', 'updateSiteEnvironmentFile', 'updateSiteDeploymentScript')->once();
-        $forge->shouldReceive('jobs')->with(1000)->andReturn([]);
-        $forge->shouldReceive('workers')->with(1000, 1001)->andReturn([]);
+        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 1001, 'https' => false]));
+        $forge->shouldReceive('syncAliases', 'updateSiteEnvironmentFile', 'updateSiteDeploymentScript')->once();
+        $forge->shouldReceive('scheduledJobs')->with(1000)->andReturn([]);
+        $forge->shouldReceive('backgroundProcesses')->with(1000)->andReturn([]);
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('deploySite')->once()->with(1000, 1001, false);
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->withArgs(fn ($server, $site, $data) => $server === 900
+        $forge->shouldReceive('deploySite')->once()->with(1000, 1001);
+        $forge->shouldReceive('updateBalancingNodes')->once()->withArgs(fn ($server, $site, $nodes) => $server === 900
             && $site === 901
-            && collect($data['servers'])->pluck('id')->all() === [100, 1000]);
-        $forge->shouldNotReceive('createJob', 'createWorker', 'obtainLetsEncryptCertificate');
+            && collect($nodes)->pluck('server_id')->all() === [100, 1000]);
+        $forge->shouldNotReceive('createScheduledJob', 'createBackgroundProcess', 'obtainLetsEncryptCertificate');
 
         $this->artisan('blacksmith:scale', ['site' => 'example.com', '--to' => 2])
             ->expectsOutputToContain('SESSION_DRIVER=file')
@@ -164,8 +165,8 @@ class ProvisioningTest extends TestCase
         $this->state()->putPool('example.com', ['balancer' => 'lb', 'primary' => 'prod', 'nodes' => ['prod', 'example-com-node-1']]);
 
         $forge = $this->forge();
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->ordered()->withArgs(fn ($server, $site, $data) => $data['servers'][1]['down'] === true);
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->ordered()->withArgs(fn ($server, $site, $data) => count($data['servers']) === 1);
+        $forge->shouldReceive('updateBalancingNodes')->once()->ordered()->withArgs(fn ($server, $site, $nodes) => $nodes[1]['down'] === true);
+        $forge->shouldReceive('updateBalancingNodes')->once()->ordered()->withArgs(fn ($server, $site, $nodes) => count($nodes) === 1);
         $forge->shouldReceive('deleteServer')->once()->ordered()->with(1000);
 
         $this->artisan('blacksmith:scale', ['site' => 'example.com', '--to' => 1])

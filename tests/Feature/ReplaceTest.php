@@ -6,9 +6,7 @@ use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
-use Laravel\Forge\Resources\Job;
 use Laravel\Forge\Resources\ServerTypes;
-use Laravel\Forge\Resources\Worker;
 use Tests\Fakes\FakeServerProvider;
 use Tests\TestCase;
 
@@ -52,14 +50,14 @@ class ReplaceTest extends TestCase
         $this->mockNewServer($forge, 800);
 
         $forge->shouldReceive('sites')->with(800)->andReturn([]);
-        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 801, 'repository' => null, 'is_secured' => false]));
-        $forge->shouldReceive('installGitRepositoryOnSite', 'updateSiteDeploymentScript')->once();
+        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 801, 'https' => false]));
+        $forge->shouldReceive('syncAliases', 'updateSiteDeploymentScript')->once();
         $forge->shouldReceive('updateSiteEnvironmentFile')->once()->withArgs(fn ($server, $site, $env) => $server === 800 && Str::contains($env, 'APP_DEBUG=false'));
-        $forge->shouldReceive('jobs')->with(800)->andReturn([]);
-        $forge->shouldReceive('workers')->with(800, 801)->andReturn([]);
+        $forge->shouldReceive('scheduledJobs')->with(800)->andReturn([]);
+        $forge->shouldReceive('backgroundProcesses')->with(800)->andReturn([]);
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('deploySite')->once()->with(800, 801, false);
-        $forge->shouldNotReceive('createJob', 'createWorker', 'obtainLetsEncryptCertificate');
+        $forge->shouldReceive('deploySite')->once()->with(800, 801);
+        $forge->shouldNotReceive('createScheduledJob', 'createBackgroundProcess', 'obtainLetsEncryptCertificate');
 
         $this->artisan('blacksmith:replace', ['instance' => 'prod'])
             ->expectsOutputToContain('prod-next is ready at 203.0.113.1 with: example.com')
@@ -86,13 +84,13 @@ class ReplaceTest extends TestCase
         $this->mockNewServer($forge, 950, 'loadbalancer');
 
         $forge->shouldReceive('sites')->with(950)->andReturn([]);
-        $forge->shouldReceive('createSite')->once()->withArgs(fn ($server, $payload) => ! isset($payload['php_version']))
-            ->andReturn($this->site(['id' => 951, 'is_secured' => false]));
+        $forge->shouldReceive('createBalancer')->once()->with(950, ['domain' => 'example.com', 'balancer_method' => 'round_robin'])
+            ->andReturn($this->site(['id' => 951, 'https' => false]));
+        $forge->shouldReceive('syncAliases')->once();
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->with(950, 951, [
-            'servers' => [['id' => 100, 'weight' => 1, 'down' => false, 'backup' => false, 'port' => 80]],
-            'method' => 'round_robin',
-        ]);
+        $forge->shouldReceive('updateBalancingNodes')->once()->with(950, 951, [
+            ['server_id' => 100, 'weight' => 1, 'down' => false, 'backup' => false, 'port' => 80],
+        ], 'round_robin');
         $forge->shouldNotReceive('deploySite', 'obtainLetsEncryptCertificate', 'updateSiteEnvironmentFile');
 
         $this->artisan('blacksmith:replace', ['instance' => 'lb'])
@@ -106,7 +104,7 @@ class ReplaceTest extends TestCase
     {
         $this->seedBlueprint();
         $this->seedReplacement();
-        $this->forge()->shouldNotReceive('createServer');
+        $this->forge()->shouldNotReceive('createCustomServer');
 
         $this->artisan('blacksmith:replace', ['instance' => 'prod'])
             ->expectsOutputToContain('already being replaced by prod-next')
@@ -127,16 +125,16 @@ class ReplaceTest extends TestCase
         $forge = $this->forge();
 
         $forge->shouldReceive('sites')->with(100)->andReturn([$this->site()]);
-        $forge->shouldReceive('jobs')->with(100)->andReturn([new Job(['id' => 9, 'command' => 'php8.4 /home/forge/example.com/artisan schedule:run'])]);
-        $forge->shouldReceive('workers')->with(100, 200)->andReturn([new Worker(['id' => 1, 'connection' => 'redis', 'queue' => 'default', 'processes' => 2])]);
-        $forge->shouldReceive('deleteJob')->once()->with(100, 9);
-        $forge->shouldReceive('deleteWorker')->once()->with(100, 200, 1);
+        $forge->shouldReceive('scheduledJobs')->with(100)->andReturn([$this->schedulerJob(9)]);
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn([$this->worker(1, ['connection' => 'redis', 'processes' => 2])]);
+        $forge->shouldReceive('deleteScheduledJob')->once()->with(100, 9);
+        $forge->shouldReceive('deleteBackgroundProcess')->once()->with(100, 1);
 
-        $forge->shouldReceive('sites')->with(800)->andReturn([$this->site(['id' => 801, 'is_secured' => false])]);
-        $forge->shouldReceive('jobs')->with(800)->andReturn([]);
-        $forge->shouldReceive('workers')->with(800, 801)->andReturn([]);
-        $forge->shouldReceive('createJob')->once()->withArgs(fn ($server) => $server === 800);
-        $forge->shouldReceive('createWorker')->once()->withArgs(fn ($server, $site) => $server === 800 && $site === 801);
+        $forge->shouldReceive('sites')->with(800)->andReturn([$this->site(['id' => 801, 'https' => false])]);
+        $forge->shouldReceive('scheduledJobs')->with(800)->andReturn([]);
+        $forge->shouldReceive('backgroundProcesses')->with(800)->andReturn([]);
+        $forge->shouldReceive('createScheduledJob')->once()->withArgs(fn ($server) => $server === 800);
+        $forge->shouldReceive('createBackgroundProcess')->once()->withArgs(fn ($server, $payload) => $server === 800 && $payload['site_id'] === 801);
         $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->withArgs(fn ($server, $site) => $server === 800 && $site === 801);
         $forge->shouldNotReceive('deleteServer');
 
@@ -168,10 +166,10 @@ class ReplaceTest extends TestCase
         $this->seedReplacement('example-com-node-1', 1100, 1101);
 
         $forge = $this->forge();
-        $forge->shouldReceive('updateNodeBalancingConfiguration')->once()->ordered()->withArgs(fn ($server, $site, $data) => $server === 900
-            && collect($data['servers'])->pluck('id')->all() === [100, 1100]);
+        $forge->shouldReceive('updateBalancingNodes')->once()->ordered()->withArgs(fn ($server, $site, $nodes) => $server === 900
+            && collect($nodes)->pluck('server_id')->all() === [100, 1100]);
         $forge->shouldReceive('deleteServer')->once()->ordered()->with(1000);
-        $forge->shouldNotReceive('obtainLetsEncryptCertificate', 'createJob', 'deleteJob', 'createWorker', 'deleteWorker');
+        $forge->shouldNotReceive('obtainLetsEncryptCertificate', 'createScheduledJob', 'deleteScheduledJob', 'createBackgroundProcess', 'deleteBackgroundProcess');
 
         $this->artisan('blacksmith:replace', ['instance' => 'example-com-node-1', '--cutover' => true, '--force' => true])
             ->expectsOutputToContain('Deleted example-com-node-1-old')

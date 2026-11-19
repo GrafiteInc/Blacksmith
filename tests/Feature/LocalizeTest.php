@@ -2,10 +2,9 @@
 
 namespace Tests\Feature;
 
-use Laravel\Forge\Resources\Job;
+use Laravel\Forge\Resources\LoadBalancingNode;
 use Laravel\Forge\Resources\RedirectRule;
 use Laravel\Forge\Resources\SecurityRule;
-use Laravel\Forge\Resources\Worker;
 use Tests\TestCase;
 
 class LocalizeTest extends TestCase
@@ -14,15 +13,14 @@ class LocalizeTest extends TestCase
     {
         $forge->shouldReceive('server')->with($server['id'])->andReturn($this->server($server));
         $forge->shouldReceive('sites')->with($server['id'])->andReturn([$this->site($site), $this->site(['id' => 1, 'name' => 'default'])]);
-        $forge->shouldReceive('jobs')->with($server['id'])->andReturn([
-            new Job(['id' => 1, 'command' => 'php8.4 /home/forge/example.com/artisan schedule:run']),
-        ]);
-        $forge->shouldReceive('workers')->with($server['id'], $site['id'])->andReturn([
-            new Worker(['id' => 1, 'connection' => 'redis', 'queue' => 'emails', 'processes' => 3, 'daemon' => 1, 'php_version' => 'php84']),
+        $forge->shouldReceive('scheduledJobs')->with($server['id'])->andReturn([$this->schedulerJob(1)]);
+        $forge->shouldReceive('backgroundProcesses')->with($server['id'])->andReturn([
+            $this->worker(1, ['connection' => 'redis', 'queue' => 'emails', 'processes' => 3, 'tries' => 3, 'php_version' => 'php84']),
+            $this->worker(2, [], ['command' => 'php8.4 artisan horizon']),
         ]);
         $forge->shouldReceive('redirectRules')->andReturn([new RedirectRule(['id' => 1, 'from' => '/old', 'to' => '/new', 'type' => 'permanent'])]);
         $forge->shouldReceive('securityRules')->andReturn([
-            new SecurityRule(['id' => 1, 'name' => 'Admin', 'path' => '/admin', 'credentials' => [['id' => 1, 'username' => 'matt']]]),
+            new SecurityRule(['id' => 1, 'name' => 'Admin', 'path' => '/admin']),
         ]);
         $forge->shouldReceive('siteEnvironmentFile')->with($server['id'], $site['id'])->andReturn($env);
         $forge->shouldReceive('siteDeploymentScript')->andReturn("git pull\n");
@@ -36,6 +34,10 @@ class LocalizeTest extends TestCase
         $gitignore = file_exists(base_path('.gitignore')) ? file_get_contents(base_path('.gitignore')) : null;
         file_put_contents(base_path('.gitignore'), "/vendor\n");
 
+        $this->blueprints()->saveSite('example.com', array_replace($this->blueprints()::defaultSite('example.com'), [
+            'security' => [['name' => 'Admin', 'path' => '/admin', 'credentials' => [['username' => 'matt', 'password' => 'secret']]]],
+        ]));
+
         $forge = $this->forge();
         $this->mockServer($forge, ['id' => 100], ['id' => 200], "APP_URL=https://example.com\n");
 
@@ -47,10 +49,14 @@ class LocalizeTest extends TestCase
         $this->assertSame(['example.com', 'www.example.com'], $site['ssl_domains']);
         $this->assertSame('acme/example', $site['repository']['repository']);
         $this->assertTrue($site['scheduler']);
-        $this->assertSame('emails', $site['workers'][0]['queue']);
-        $this->assertTrue($site['workers'][0]['daemon']);
+        $this->assertCount(1, $site['workers']);
+        $this->assertSame(['connection' => 'redis', 'queue' => 'emails', 'timeout' => 60, 'sleep' => 10, 'tries' => 3, 'processes' => 3, 'stopwaitsecs' => 10, 'force' => false, 'php_version' => 'php84'], $site['workers'][0]);
+        $this->assertSame('/public', $site['directory']);
+        $this->assertSame('laravel', $site['project_type']);
+        $this->assertSame(['provider' => 'github', 'repository' => 'acme/example', 'branch' => 'main', 'composer' => true], $site['repository']);
+        $this->assertTrue($site['lets_encrypt']);
         $this->assertSame([['from' => '/old', 'to' => '/new', 'type' => 'permanent']], $site['redirects']);
-        $this->assertSame([['username' => 'matt', 'password' => '']], $site['security'][0]['credentials']);
+        $this->assertSame([['username' => 'matt', 'password' => 'secret']], $site['security'][0]['credentials']);
         $this->assertSame("APP_URL=https://example.com\n", $this->blueprints()->baseEnv('example.com'));
         $this->assertSame("git pull\n", $this->blueprints()->deployScript('example.com'));
         $this->assertFalse($this->blueprints()->hasSite('default'));
@@ -94,8 +100,8 @@ class LocalizeTest extends TestCase
 
         $forge->shouldReceive('server')->with(300)->andReturn($this->server(['id' => 300, 'name' => 'Balancer', 'type' => 'loadbalancer']));
         $forge->shouldReceive('sites')->with(300)->andReturn([$this->site(['id' => 301])]);
-        $forge->shouldReceive('get')->with('servers/300/sites/301/balancing')->andReturn([
-            'nodes' => [['server_id' => 100, 'weight' => 2, 'down' => false, 'backup' => false, 'port' => 80]],
+        $forge->shouldReceive('balancingNodes')->with(300, 301)->andReturn([
+            new LoadBalancingNode(['server_id' => 100, 'weight' => 2, 'down' => false, 'backup' => false, 'port' => 80]),
         ]);
 
         $this->artisan('blacksmith:localize', ['--server' => 300])->assertSuccessful();

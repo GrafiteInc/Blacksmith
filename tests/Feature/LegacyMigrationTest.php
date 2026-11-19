@@ -83,7 +83,7 @@ class LegacyMigrationTest extends TestCase
         $forge = $this->forge();
         $forge->shouldReceive('server')->with(100)->andReturn($this->server());
         $forge->shouldReceive('sites')->with(100)->andReturn([]);
-        $forge->shouldReceive('jobs')->with(100)->andReturn([]);
+        $forge->shouldReceive('scheduledJobs')->with(100)->andReturn([]);
 
         $this->artisan('blacksmith:localize')
             ->expectsOutput('Migrating the v1 configuration.')

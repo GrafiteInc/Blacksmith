@@ -2,9 +2,7 @@
 
 namespace Tests\Feature;
 
-use Laravel\Forge\Resources\Job;
 use Laravel\Forge\Resources\PHPVersion;
-use Laravel\Forge\Resources\Worker;
 use Tests\TestCase;
 
 class UpdateServerTest extends TestCase
@@ -12,15 +10,15 @@ class UpdateServerTest extends TestCase
     /**
      * Forge reads for a server that matches the seeded blueprint exactly.
      */
-    protected function mockMatchingServer($forge, ?array $sites = null)
+    protected function mockMatchingServer($forge, ?array $sites = null, ?array $processes = null, ?array $jobs = null)
     {
         $forge->shouldReceive('server')->with(100)->andReturn($this->server());
         $forge->shouldReceive('phpVersions')->with(100)->andReturn([new PHPVersion(['version' => 'php84'])]);
         $forge->shouldReceive('sites')->with(100)->andReturn($sites ?? [$this->site()]);
-        $forge->shouldReceive('jobs')->with(100)->andReturn([new Job(['id' => 9, 'command' => 'php8.4 /home/forge/example.com/artisan schedule:run'])]);
+        $forge->shouldReceive('scheduledJobs')->with(100)->andReturn($jobs ?? [$this->schedulerJob(9)]);
         $forge->shouldReceive('siteEnvironmentFile')->andReturn("APP_NAME=Example\nAPP_URL=https://example.com\n");
         $forge->shouldReceive('siteDeploymentScript')->andReturn("cd /home/forge/example.com\ngit pull\n");
-        $forge->shouldReceive('workers')->with(100, 200)->andReturn([new Worker(['id' => 1, 'connection' => 'redis', 'queue' => 'default', 'processes' => 2])]);
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn($processes ?? [$this->worker(1, ['connection' => 'redis', 'processes' => 2])]);
         $forge->shouldReceive('redirectRules')->andReturn([]);
         $forge->shouldReceive('securityRules')->andReturn([]);
     }
@@ -33,9 +31,9 @@ class UpdateServerTest extends TestCase
         $forge = $this->forge();
         $this->mockMatchingServer($forge);
 
-        $forge->shouldReceive('updateServer')->once();
+        $forge->shouldReceive('updatePhpLimits')->once()->with(100, 5, 30);
         $forge->shouldReceive('updateSiteEnvironmentFile')->once()->with(100, 200, "APP_NAME=Example\nAPP_URL=https://example.com\nAPP_DEBUG=false".PHP_EOL);
-        $forge->shouldNotReceive('createSite', 'updateSiteDeploymentScript', 'createWorker', 'deleteWorker', 'createJob', 'obtainLetsEncryptCertificate');
+        $forge->shouldNotReceive('createSite', 'updateSite', 'syncAliases', 'updateSiteDeploymentScript', 'createBackgroundProcess', 'deleteBackgroundProcess', 'createScheduledJob', 'obtainLetsEncryptCertificate', 'installPHP', 'enableOPCache', 'disableOPCache');
 
         $this->artisan('blacksmith:update-server', ['instance' => 'prod'])
             ->expectsOutputToContain('prod example.com: Update environment')
@@ -49,21 +47,32 @@ class UpdateServerTest extends TestCase
         $this->state()->forgetInstance('prod');
 
         $forge = $this->forge();
-        $this->mockMatchingServer($forge, [$this->site(['id' => 1, 'name' => 'default'])]);
-        $forge->shouldReceive('jobs')->with(100)->andReturn([]);
+        $this->mockMatchingServer($forge, [$this->site(['id' => 1, 'name' => 'default'])], [], []);
 
         $forge->shouldReceive('deleteSite')->once()->with(100, 1);
-        $forge->shouldReceive('createSite')->once()->withArgs(fn ($server, $payload) => $payload['domain'] === 'example.com'
-            && $payload['aliases'] === ['www.example.com']
-            && $payload['php_version'] === 'php84')
-            ->andReturn($this->site(['id' => 500, 'repository' => null, 'is_secured' => false]));
-        $forge->shouldReceive('installGitRepositoryOnSite')->once()->with(100, 500, ['provider' => 'github', 'branch' => 'main', 'composer' => true, 'repository' => 'acme/example'], true);
+        $forge->shouldReceive('createSite')->once()->with(100, [
+            'name' => 'example.com',
+            'type' => 'laravel',
+            'web_directory' => '/public',
+            'is_isolated' => false,
+            'php_version' => 'php84',
+            'source_control_provider' => 'github',
+            'repository' => 'acme/example',
+            'branch' => 'main',
+            'install_composer_dependencies' => true,
+        ])->andReturn($this->site(['id' => 500, 'https' => false]));
+        $forge->shouldReceive('syncAliases')->once()->with(100, 500, 'example.com', ['www.example.com']);
         $forge->shouldReceive('updateSiteEnvironmentFile')->once();
         $forge->shouldReceive('updateSiteDeploymentScript')->once();
-        $forge->shouldReceive('workers')->with(100, 500)->andReturn([]);
-        $forge->shouldReceive('createWorker')->once()->withArgs(fn ($server, $site, $worker) => $site === 500 && $worker['processes'] === 2);
-        $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->with(100, 500, ['domains' => ['example.com', 'www.example.com']], false);
-        $forge->shouldReceive('updateServer')->once();
+        $forge->shouldReceive('createScheduledJob')->once()->with(100, [
+            'name' => 'example.com scheduler',
+            'command' => 'php8.4 /home/forge/example.com/artisan schedule:run',
+            'frequency' => 'minutely',
+            'user' => 'forge',
+        ]);
+        $forge->shouldReceive('createBackgroundProcess')->once()->withArgs(fn ($server, $payload) => $payload['site_id'] === 500 && $payload['processes'] === 2);
+        $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->with(100, 500, ['example.com', 'www.example.com']);
+        $forge->shouldReceive('updatePhpLimits')->once();
 
         $this->artisan('blacksmith:update-server', ['instance' => 'fresh', '--site' => ['example.com']])->assertSuccessful();
 
@@ -76,7 +85,7 @@ class UpdateServerTest extends TestCase
 
         $forge = $this->forge();
         $this->mockMatchingServer($forge);
-        $forge->shouldNotReceive('updateServer', 'createWorker', 'deleteWorker', 'updateSiteEnvironmentFile');
+        $forge->shouldNotReceive('updatePhpLimits', 'createBackgroundProcess', 'deleteBackgroundProcess', 'updateSiteEnvironmentFile');
 
         $this->artisan('blacksmith:update-server', ['--dry-run' => true])
             ->expectsOutputToContain('[plan] prod example.com: Create worker redis:high x1')
@@ -92,7 +101,7 @@ class UpdateServerTest extends TestCase
         $forge = $this->forge();
         $this->mockMatchingServer($forge);
         $forge->shouldReceive('updateSiteDeploymentScript')->once()->with(100, 200, "new script\n");
-        $forge->shouldNotReceive('updateServer', 'updateSiteEnvironmentFile');
+        $forge->shouldNotReceive('updatePhpLimits', 'updateSiteEnvironmentFile');
 
         $this->artisan('blacksmith:update-server', ['instance' => 'prod', '--only' => 'deploy'])->assertSuccessful();
 
@@ -111,10 +120,58 @@ class UpdateServerTest extends TestCase
         $forge = $this->forge();
         $this->mockMatchingServer($forge);
 
-        $forge->shouldReceive('deleteJob')->once()->with(100, 9);
-        $forge->shouldReceive('deleteWorker')->once()->with(100, 200, 1);
-        $forge->shouldNotReceive('createWorker', 'obtainLetsEncryptCertificate');
+        $forge->shouldReceive('deleteScheduledJob')->once()->with(100, 9);
+        $forge->shouldReceive('deleteBackgroundProcess')->once()->with(100, 1);
+        $forge->shouldNotReceive('createBackgroundProcess', 'obtainLetsEncryptCertificate');
 
         $this->artisan('blacksmith:update-server', ['instance' => 'node', '--only' => 'scheduler,workers'])->assertSuccessful();
+    }
+
+    public function test_site_settings_that_drifted_are_updated()
+    {
+        $this->seedBlueprint([
+            'php_version' => 'php85',
+            'aliases' => ['www.example.com', 'app.example.com'],
+            'repository' => ['provider' => 'github', 'repository' => 'acme/example', 'branch' => 'release', 'composer' => true],
+        ]);
+
+        $forge = $this->forge();
+        $this->mockMatchingServer($forge);
+
+        $forge->shouldReceive('syncAliases')->once()->with(100, 200, 'example.com', ['www.example.com', 'app.example.com']);
+        $forge->shouldReceive('updateSite')->once()->with(100, 200, ['php_version' => 'php85']);
+        $forge->shouldReceive('updateSite')->once()->with(100, 200, ['repository_branch' => 'release']);
+
+        $this->artisan('blacksmith:update-server', ['instance' => 'prod', '--only' => 'site,repository'])->assertSuccessful();
+    }
+
+    public function test_a_different_repository_is_reported_not_changed()
+    {
+        $this->seedBlueprint(['repository' => ['provider' => 'github', 'repository' => 'acme/other', 'branch' => 'main']]);
+
+        $forge = $this->forge();
+        $this->mockMatchingServer($forge);
+        $forge->shouldNotReceive('updateSite');
+
+        $this->artisan('blacksmith:update-server', ['instance' => 'prod', '--only' => 'repository'])
+            ->expectsOutputToContain("Forge can't change a site's repository")
+            ->assertSuccessful();
+    }
+
+    public function test_quick_deploy_and_security_rules_use_the_v2_endpoints()
+    {
+        $this->seedBlueprint([
+            'quick_deploy' => true,
+            'security' => [['name' => 'Admin', 'path' => '/admin', 'credentials' => [['username' => 'matt', 'password' => 'secret']]]],
+        ]);
+
+        $forge = $this->forge();
+        $this->mockMatchingServer($forge);
+        $forge->shouldReceive('securityRules')->andReturn([]);
+
+        $forge->shouldReceive('enableQuickDeploy')->once()->with(100, 200);
+        $forge->shouldReceive('createSecurityRule')->once()->with(100, 200, ['name' => 'Admin', 'path' => '/admin', 'credentials' => [['username' => 'matt', 'password' => 'secret']]]);
+
+        $this->artisan('blacksmith:update-server', ['instance' => 'prod', '--only' => 'quick_deploy,security'])->assertSuccessful();
     }
 }
