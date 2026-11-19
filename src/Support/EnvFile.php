@@ -91,4 +91,25 @@ class EnvFile
 
         return $warnings;
     }
+
+    /**
+     * Warnings for data that lives on the server itself and isn't copied to a replacement.
+     */
+    public static function replaceWarnings(string $contents): array
+    {
+        $env = collect(static::parse($contents))->map(fn ($value) => trim($value, '"\''));
+        $warnings = [];
+
+        if ($env->get('DB_CONNECTION') === 'sqlite') {
+            $warnings[] = 'DB_CONNECTION=sqlite keeps the database on the old server, copy it over before cutover.';
+        } elseif (in_array($env->get('DB_HOST'), ['127.0.0.1', 'localhost'], true)) {
+            $warnings[] = "DB_HOST={$env->get('DB_HOST')} means the database is on the old server, move the data before cutover.";
+        }
+
+        if (in_array($env->get('FILESYSTEM_DISK'), ['local', 'public'], true)) {
+            $warnings[] = "FILESYSTEM_DISK={$env->get('FILESYSTEM_DISK')} keeps uploads in storage/ on the old server, they are not copied.";
+        }
+
+        return $warnings;
+    }
 }

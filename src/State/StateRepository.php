@@ -11,7 +11,9 @@ use RuntimeException;
  * {
  *   "instances": {
  *     "prod": {"server_id": 1, "ip_address": "", "private_ip_address": "", "profile": "app",
- *              "provider": "digitalocean", "provider_id": 2, "sites": {"example.com": 3}}
+ *              "provider": "digitalocean", "provider_id": 2, "sites": {"example.com": 3}},
+ *     "prod-next": {"server_id": 4, ..., "replaces": "prod"},     # being built by blacksmith:replace
+ *     "prod-old": {"server_id": 5, ..., "retired_from": "prod"}   # replaced, waiting for --finish
  *   },
  *   "pools": {
  *     "example.com": {"balancer": "lb", "primary": "prod", "nodes": ["prod", "example-com-node-1"], "method": "round_robin"}
@@ -97,6 +99,82 @@ class StateRepository
         return null;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Replacements
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * The instance being built to replace $instance, if any.
+     */
+    public function replacementFor(string $instance): ?string
+    {
+        return $this->findInstance(fn ($record) => ($record['replaces'] ?? null) === $instance);
+    }
+
+    /**
+     * The old server $instance was moved off of, kept until the replacement is finished.
+     */
+    public function retiredFor(string $instance): ?string
+    {
+        return $this->findInstance(fn ($record) => ($record['retired_from'] ?? null) === $instance);
+    }
+
+    /**
+     * Replacements and retired servers are mid-move and are left out of bulk commands.
+     */
+    public function isTransient(string $instance): bool
+    {
+        $record = $this->state['instances'][$instance] ?? [];
+
+        return ! empty($record['replaces']) || ! empty($record['retired_from']);
+    }
+
+    /**
+     * The instance name a server's blueprints (such as .env.{instance}) are read under.
+     */
+    public function blueprintName(string $instance): string
+    {
+        return $this->state['instances'][$instance]['replaces'] ?? $instance;
+    }
+
+    /**
+     * Swap the replacement in under the instance's name and keep the old server as $retired,
+     * in one write, pools and env overrides refer to names so they follow the new server.
+     */
+    public function promoteReplacement(string $instance, string $retired): void
+    {
+        $replacement = $this->replacementFor($instance);
+
+        if (! $replacement) {
+            throw new RuntimeException("Instance [{$instance}] has no replacement.");
+        }
+
+        if ($this->hasInstance($retired)) {
+            throw new RuntimeException("Instance [{$retired}] already exists.");
+        }
+
+        $new = $this->state['instances'][$replacement];
+        unset($new['replaces'], $this->state['instances'][$replacement]);
+
+        $this->state['instances'][$retired] = array_replace($this->instance($instance), ['retired_from' => $instance]);
+        $this->state['instances'][$instance] = $new;
+
+        $this->save();
+    }
+
+    protected function findInstance(callable $matches): ?string
+    {
+        foreach ($this->state['instances'] as $name => $record) {
+            if ($matches($record)) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
     public function siteId(string $instance, string $domain): ?int
     {
         $id = $this->state['instances'][$instance]['sites'][$domain] ?? null;
@@ -135,16 +213,24 @@ class StateRepository
             return $pool['primary'];
         }
 
-        return $this->instancesFor($domain)[0] ?? null;
+        return collect($this->instancesFor($domain))->first(fn ($instance) => ! $this->isTransient($instance));
     }
 
     /**
      * primary: full copy of the site (scheduler, workers)
      * web: a load balanced node that only serves web traffic
      * balancer: the load balancer in front of the nodes
+     *
+     * A replacement or retired server never runs the scheduler or workers.
      */
     public function roleFor(string $instance, string $domain): string
     {
+        $record = $this->state['instances'][$instance] ?? [];
+
+        if ($original = $record['replaces'] ?? $record['retired_from'] ?? null) {
+            return $this->roleFor($original, $domain) === 'balancer' ? 'balancer' : 'web';
+        }
+
         $pool = $this->pool($domain);
 
         if ($pool && $pool['balancer'] === $instance) {
