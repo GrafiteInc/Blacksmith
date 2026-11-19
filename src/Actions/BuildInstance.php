@@ -35,8 +35,9 @@ class BuildInstance
         ?string $privateIp = null,
         ?string $role = null,
         bool $deploy = true,
+        array $attributes = [],
     ): array {
-        $this->provision->handle($name, $profile, $ip, $privateIp);
+        $this->provision->handle($name, $profile, $ip, $privateIp, $attributes);
 
         $this->server->handle($name, $plan);
 

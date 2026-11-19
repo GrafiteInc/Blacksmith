@@ -38,7 +38,7 @@ abstract class BlacksmithCommand extends Command
     }
 
     /**
-     * The named instance, or every instance when no name is given.
+     * The named instance, or every instance when no name is given (old servers from blacksmith:replace are left out).
      */
     protected function resolveInstances(?string $name): array
     {
@@ -48,7 +48,10 @@ abstract class BlacksmithCommand extends Command
             return [$name];
         }
 
-        $instances = array_keys($this->state()->instances());
+        $instances = collect($this->state()->instances())
+            ->reject(fn ($instance) => ! empty($instance['retired_from']))
+            ->keys()
+            ->toArray();
 
         if (empty($instances)) {
             throw new RuntimeException('No instances yet, run blacksmith:localize or blacksmith:instance first.');

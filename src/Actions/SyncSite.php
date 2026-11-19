@@ -63,7 +63,7 @@ class SyncSite
             }
 
             if ($should('env')) {
-                $this->syncFile('environment', $this->blueprints->env($domain, $instance), $serverId, $siteId, $created, $plan, $label);
+                $this->syncFile('environment', $this->blueprints->env($domain, $this->state->blueprintName($instance)), $serverId, $siteId, $created, $plan, $label);
             }
 
             if ($should('deploy')) {
@@ -98,7 +98,7 @@ class SyncSite
         }
 
         if ($should('balancing') && $role === 'balancer') {
-            $this->balancer->handle($domain, $plan);
+            $this->balancer->handle($domain, $plan, [], $instance);
         }
 
         return $siteId;

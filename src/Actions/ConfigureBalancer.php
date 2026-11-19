@@ -15,8 +15,9 @@ class ConfigureBalancer
 
     /**
      * Point the balancer's site at the pool's nodes, any node in $down is drained.
+     * $instance targets another balancer than the pool's, such as its replacement.
      */
-    public function handle(string $domain, Plan $plan, array $down = []): void
+    public function handle(string $domain, Plan $plan, array $down = [], ?string $instance = null): void
     {
         $pool = $this->state->pool($domain);
 
@@ -24,11 +25,12 @@ class ConfigureBalancer
             throw new RuntimeException("{$domain} does not have a load balancer, run blacksmith:balancer first.");
         }
 
-        $balancer = $this->state->instance($pool['balancer']);
-        $siteId = $this->state->siteId($pool['balancer'], $domain);
+        $instance ??= $pool['balancer'];
+        $balancer = $this->state->instance($instance);
+        $siteId = $this->state->siteId($instance, $domain);
 
         if (! $siteId && ! $plan->dryRun) {
-            throw new RuntimeException("{$domain} has not been created on {$pool['balancer']} yet.");
+            throw new RuntimeException("{$domain} has not been created on {$instance} yet.");
         }
 
         $servers = collect($pool['nodes'])->map(fn ($node) => [
@@ -41,7 +43,7 @@ class ConfigureBalancer
 
         $nodes = collect($pool['nodes'])->map(fn ($node) => in_array($node, $down, true) ? "{$node} (down)" : $node)->implode(', ');
 
-        $plan->step("{$pool['balancer']}: balance {$domain} across {$nodes} ({$pool['method']})", function () use ($balancer, $siteId, $servers, $pool) {
+        $plan->step("{$instance}: balance {$domain} across {$nodes} ({$pool['method']})", function () use ($balancer, $siteId, $servers, $pool) {
             $this->forge->updateNodeBalancingConfiguration($balancer['server_id'], $siteId, [
                 'servers' => $servers,
                 'method' => $pool['method'],

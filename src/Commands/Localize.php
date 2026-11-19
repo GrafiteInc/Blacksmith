@@ -49,7 +49,7 @@ class Localize extends BlacksmithCommand
                 $pull->server($this->option('server'), $this->option('instance'), $this->option('profile'));
             } elseif ($instances = $this->state()->instances()) {
                 foreach ($instances as $name => $instance) {
-                    if (! empty($instance['server_id'])) {
+                    if (! empty($instance['server_id']) && ! $this->state()->isTransient($name)) {
                         $pull->server($instance['server_id'], $name);
                     }
                 }

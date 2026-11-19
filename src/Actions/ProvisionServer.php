@@ -29,7 +29,10 @@ class ProvisionServer
         protected RemoteShell $shell,
     ) {}
 
-    public function handle(string $instance, string $profileName, ?string $ip = null, ?string $privateIp = null): array
+    /**
+     * @param  array  $attributes  extra values stored on the instance in state.json
+     */
+    public function handle(string $instance, string $profileName, ?string $ip = null, ?string $privateIp = null, array $attributes = []): array
     {
         if ($this->state->hasInstance($instance)) {
             $existing = $this->state->instance($instance);
@@ -47,12 +50,12 @@ class ProvisionServer
             $this->report("{$instance}: Creating server with {$provider->name()}");
             $providerId = $provider->create($instance, $profile['provider'] ?? []);
 
-            $this->state->putInstance($instance, [
+            $this->state->putInstance($instance, array_replace($attributes, [
                 'server_id' => null,
                 'profile' => $profileName,
                 'provider' => $provider->name(),
                 'provider_id' => $providerId,
-            ]);
+            ]));
 
             $this->report("{$instance}: Waiting for the server to boot");
             $addresses = $provider->waitUntilActive($providerId);
@@ -84,12 +87,12 @@ class ProvisionServer
         $this->report("{$instance}: Creating the Forge server");
         $server = $this->forge->createServer($payload);
 
-        $this->state->putInstance($instance, [
+        $this->state->putInstance($instance, array_replace($attributes, [
             'server_id' => $server->id,
             'ip_address' => $ip,
             'private_ip_address' => $privateIp,
             'profile' => $profileName,
-        ]);
+        ]));
 
         $this->report("{$instance}: Running the Forge provision script, this takes around 10 minutes");
         $result = $this->shell->run($ip, $server->provisionCommand, (int) config('blacksmith.provision_timeout', 1800));

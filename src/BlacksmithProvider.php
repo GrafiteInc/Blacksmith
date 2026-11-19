@@ -8,6 +8,7 @@ use Grafite\Blacksmith\Commands\Balancer;
 use Grafite\Blacksmith\Commands\Instance;
 use Grafite\Blacksmith\Commands\Localize;
 use Grafite\Blacksmith\Commands\MakeServer;
+use Grafite\Blacksmith\Commands\Replace;
 use Grafite\Blacksmith\Commands\Scale;
 use Grafite\Blacksmith\Commands\UpdateServer;
 use Grafite\Blacksmith\Commands\Workers;
@@ -79,6 +80,7 @@ class BlacksmithProvider extends ServiceProvider
             Instance::class,
             Balancer::class,
             Scale::class,
+            Replace::class,
         ]);
     }
 }
