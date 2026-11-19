@@ -2,6 +2,7 @@
 
 namespace Grafite\Blacksmith\Blueprint;
 
+use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\EnvFile;
 use RuntimeException;
 
@@ -74,17 +75,7 @@ class BlueprintRepository
 
     public static function defaultProfile(string $type = 'app'): array
     {
-        return [
-            'type' => $type,
-            'ubuntu_version' => '24.04',
-            'php_version' => 'php84',
-            'php_cli_version' => 'php84',
-            'database_type' => null,
-            'max_upload_size' => 5,
-            'max_execution_time' => 30,
-            'opcache' => true,
-            'provider' => [],
-        ];
+        return array_merge(['type' => $type], Defaults::section('server'), ['provider' => []]);
     }
 
     /*
@@ -128,17 +119,19 @@ class BlueprintRepository
 
     public static function defaultSite(string $domain): array
     {
+        $site = Defaults::section('site');
+
         return [
             'domain' => $domain,
             'aliases' => [],
-            'directory' => '/public',
-            'project_type' => 'php',
-            'php_version' => 'php84',
+            'directory' => $site['directory'] ?? '/public',
+            'project_type' => $site['project_type'] ?? 'laravel',
+            'php_version' => $site['php_version'] ?? null,
             'repository' => null,
-            'lets_encrypt' => true,
+            'lets_encrypt' => (bool) ($site['lets_encrypt'] ?? true),
             'ssl_domains' => [$domain],
-            'quick_deploy' => false,
-            'scheduler' => false,
+            'quick_deploy' => (bool) ($site['quick_deploy'] ?? false),
+            'scheduler' => (bool) ($site['scheduler'] ?? false),
             'workers' => [],
             'redirects' => [],
             'security' => [],

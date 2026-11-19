@@ -5,6 +5,7 @@ namespace Grafite\Blacksmith\Blueprint;
 use Grafite\Blacksmith\Actions\PullFromForge;
 use Grafite\Blacksmith\Actions\SyncWorkers;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\EnvFile;
 use Grafite\Blacksmith\Support\ReportsProgress;
 use Illuminate\Support\Str;
@@ -71,7 +72,7 @@ class LegacyMigrator
                     $pools[$site['domain']] = [
                         'balancer' => $instance,
                         'nodes' => collect($site['balancing'])->pluck('server_id')->toArray(),
-                        'method' => str_replace('-', '_', $site['balancing_type'] ?? 'round_robin'),
+                        'method' => str_replace('-', '_', $site['balancing_type'] ?? Defaults::get('balancer.method', 'round_robin')),
                     ];
                 }
             }
@@ -121,14 +122,16 @@ class LegacyMigrator
             $repository = null;
         }
 
-        $this->blueprints->saveSite($domain, array_replace(BlueprintRepository::defaultSite($domain), [
-            'directory' => $site['directory'] ?? '/public',
-            'php_version' => $site['php_version'] ?? 'php84',
+        $defaults = BlueprintRepository::defaultSite($domain);
+
+        $this->blueprints->saveSite($domain, array_replace($defaults, [
+            'directory' => $site['directory'] ?? $defaults['directory'],
+            'php_version' => $site['php_version'] ?? $defaults['php_version'],
             'repository' => $repository,
-            'lets_encrypt' => (bool) ($site['lets_encrypt'] ?? true),
+            'lets_encrypt' => (bool) ($site['lets_encrypt'] ?? $defaults['lets_encrypt']),
             'ssl_domains' => $site['ssl_domains'] ?? [$domain],
-            'quick_deploy' => (bool) ($site['enable_quick_deploy'] ?? false),
-            'scheduler' => (bool) ($site['scheduler_enabled'] ?? false),
+            'quick_deploy' => (bool) ($site['enable_quick_deploy'] ?? $defaults['quick_deploy']),
+            'scheduler' => (bool) ($site['scheduler_enabled'] ?? $defaults['scheduler']),
             'workers' => collect($site['workers'] ?? [])->map(fn ($worker) => SyncWorkers::normalize($worker))->values()->toArray(),
             'redirects' => collect($site['redirects'] ?? [])
                 ->filter(fn ($rule) => ! empty($rule['from']))

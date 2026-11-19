@@ -5,6 +5,7 @@ namespace Grafite\Blacksmith\Commands;
 use Grafite\Blacksmith\Actions\ConfigureBalancer;
 use Grafite\Blacksmith\Actions\ProvisionServer;
 use Grafite\Blacksmith\Actions\SyncSite;
+use Grafite\Blacksmith\Support\Defaults;
 use RuntimeException;
 
 class Balancer extends BlacksmithCommand
@@ -17,7 +18,7 @@ class Balancer extends BlacksmithCommand
     protected $signature = 'blacksmith:balancer
         {name : The name of the load balancer instance}
         {--site= : The site to balance}
-        {--method=round_robin : round_robin, least_conn or ip_hash}
+        {--method= : round_robin, least_conn or ip_hash, defaults to blacksmith.defaults.balancer.method}
         {--profile=balancer : The server profile in .blacksmith/servers}
         {--ip= : Use an existing server at this IP instead of creating one}
         {--private-ip= : The private IP of the existing server}';
@@ -37,7 +38,7 @@ class Balancer extends BlacksmithCommand
     public function handle(ProvisionServer $provision, SyncSite $site)
     {
         $name = $this->argument('name');
-        $method = $this->option('method');
+        $method = $this->option('method') ?: Defaults::get('balancer.method', 'round_robin');
 
         try {
             $domain = $this->siteOption();

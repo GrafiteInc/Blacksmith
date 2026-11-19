@@ -2,6 +2,7 @@
 
 namespace Grafite\Blacksmith\State;
 
+use Grafite\Blacksmith\Support\Defaults;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -266,7 +267,7 @@ class StateRepository
             'balancer' => null,
             'primary' => null,
             'nodes' => [],
-            'method' => 'round_robin',
+            'method' => Defaults::get('balancer.method', 'round_robin'),
         ], $this->state['pools'][$domain] ?? [], $pool);
 
         $this->save();
