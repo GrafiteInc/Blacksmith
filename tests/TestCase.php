@@ -8,6 +8,7 @@ use Grafite\Blacksmith\State\StateRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Sleep;
 use Laravel\Forge\Forge;
+use Laravel\Forge\Resources\PHPVersion;
 use Laravel\Forge\Resources\Server;
 use Laravel\Forge\Resources\Site;
 use Mockery;
@@ -55,6 +56,18 @@ abstract class TestCase extends OrchestraTestCase
         $this->app->instance(Forge::class, $forge);
 
         return $forge;
+    }
+
+    /**
+     * A Forge server that is created, provisioned and reports ready.
+     */
+    protected function mockNewServer($forge, int $id, string $type = 'app')
+    {
+        $forge->shouldReceive('createServer')->once()->ordered()->withArgs(fn ($payload) => $payload['provider'] === 'custom' && $payload['type'] === $type)
+            ->andReturnUsing(fn ($payload) => new Server(['id' => $id, 'name' => $payload['name'], 'type' => $type, 'provision_command' => "curl forge/{$id} | bash"]));
+        $forge->shouldReceive('server')->with($id)->andReturn($this->server(['id' => $id, 'is_ready' => true, 'type' => $type]));
+        $forge->shouldReceive('phpVersions')->with($id)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('updateServer')->with($id, Mockery::any());
     }
 
     protected function blueprints(): BlueprintRepository

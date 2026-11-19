@@ -5,8 +5,6 @@ namespace Tests\Feature;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
-use Laravel\Forge\Resources\PHPVersion;
-use Laravel\Forge\Resources\Server;
 use Tests\Fakes\FakeServerProvider;
 use Tests\TestCase;
 
@@ -22,15 +20,6 @@ class ProvisioningTest extends TestCase
         $this->app->instance(ServerProvider::class, $this->provider);
 
         Process::fake();
-    }
-
-    protected function mockNewServer($forge, int $id, string $type = 'app')
-    {
-        $forge->shouldReceive('createServer')->once()->ordered()->withArgs(fn ($payload) => $payload['provider'] === 'custom' && $payload['type'] === $type)
-            ->andReturnUsing(fn ($payload) => new Server(['id' => $id, 'name' => $payload['name'], 'type' => $type, 'provision_command' => "curl forge/{$id} | bash"]));
-        $forge->shouldReceive('server')->with($id)->andReturn($this->server(['id' => $id, 'is_ready' => true, 'type' => $type]));
-        $forge->shouldReceive('phpVersions')->with($id)->andReturn([new PHPVersion(['version' => 'php84'])]);
-        $forge->shouldReceive('updateServer')->with($id, \Mockery::any());
     }
 
     public function test_make_server_creates_registers_and_provisions()
