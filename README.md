@@ -76,6 +76,7 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 | `blacksmith:instance {name}` | Create a new server with copies of your sites and deploy them, in one step. |
 | `blacksmith:balancer {name} --site=` | Put a load balancer in front of a site. |
 | `blacksmith:scale {site} --to=N` | Add or remove web nodes behind the site's load balancer. `--remove=node` drains a node and then deletes it. |
+| `blacksmith:replace {instance}` | Move an instance to a fresh server, for example for a new Ubuntu version. Then `--cutover` to swap it in, `--finish` to delete the old server, or `--abort` to throw the new one away. |
 
 ### Copy a site to a new server
 
@@ -96,6 +97,23 @@ php artisan blacksmith:scale example.com --to=3
 ```
 
 The server already running the site becomes the **primary** node. It is the only node that runs the scheduler and queue workers. New nodes are web-only: they get the same env and deploy script, but no scheduler, workers or certificate, because the balancer terminates SSL. Before scaling, make sure sessions, cache, the database and uploads are shared between servers (`scale` warns you about `file`/`sqlite`/`localhost` settings).
+
+### Replace a server (OS upgrades)
+
+Forge recommends against upgrading Ubuntu in place. Instead, build a new server, move your sites over and retire the old one. `blacksmith:replace` does that in two steps, with a pause in between for you to switch DNS.
+
+First, set the new `ubuntu_version` **and** the matching `provider.image` in `.blacksmith/servers/app.json` (or pass `--profile=` to use another profile).
+
+```
+php artisan blacksmith:replace prod              # builds prod-next and deploys the sites, with no scheduler, workers or SSL yet
+# test it (e.g. add "{new ip} example.com" to /etc/hosts), move any local data, then point DNS at the new IP
+php artisan blacksmith:replace prod --cutover    # stops the scheduler and workers on the old server and turns them on, with SSL, on the new one
+php artisan blacksmith:replace prod --finish     # deletes the old server (kept as prod-old) once you're happy
+```
+
+At cutover the new server takes over the name `prod`, so `.env.prod` overrides, pools and every other command keep working. If the instance sits behind a load balancer, DNS doesn't change: cutover points the balancer at the new server. Run `--abort` before cutover to delete the new server and start over.
+
+Blacksmith copies what's in the blueprints. It does **not** copy databases, files in `storage/`, daemons, firewall rules, server SSH keys or cron jobs other than the scheduler, so move those yourself before cutover. `replace` warns you when the env points at a local database or disk.
 
 ### Upgrading from 1.x
 
