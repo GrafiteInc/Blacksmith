@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.2] - 2026-11-20
+
+### Fix
+- drop the incorrect specs
+- report the fields Forge rejected instead of an uncaught validation error
+
 ## [v2.1.1] - 2026-11-20
 
 ### Docs
