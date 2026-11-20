@@ -75,7 +75,7 @@ class ProvisioningTest extends TestCase
             && $payload['ocean2'] === ['region_id' => 'tor1', 'size_id' => 's-2vcpu-4gb'])
             ->andReturn(new Server(['id' => 710, 'name' => 'worker-1']));
         $forge->shouldReceive('server')->with(710)->andReturn($this->server(['id' => 710, 'is_ready' => true, 'ip_address' => '198.51.100.10', 'private_ip_address' => '10.137.0.10']));
-        $forge->shouldReceive('phpVersions')->with(710)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('phpVersions')->with(710)->andReturn([new PHPVersion(['version' => '8.4', 'binary_name' => 'php8.4', 'status' => 'installed'])]);
         $forge->shouldReceive('updatePhpLimits')->with(710, Mockery::any(), Mockery::any());
 
         $this->artisan('blacksmith:make-server', ['instance' => 'worker-1'])
@@ -98,7 +98,7 @@ class ProvisioningTest extends TestCase
         $forge = $this->forge();
         $forge->shouldReceive('createCustomServer')->once()->andReturn(new Server(['id' => 702, 'name' => 'box']));
         $forge->shouldReceive('server')->with(702)->andReturn($this->server(['id' => 702, 'is_ready' => true]));
-        $forge->shouldReceive('phpVersions')->with(702)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('phpVersions')->with(702)->andReturn([new PHPVersion(['version' => '8.4', 'binary_name' => 'php8.4', 'status' => 'installed'])]);
         $forge->shouldReceive('updatePhpLimits')->with(702, Mockery::any(), Mockery::any());
 
         $this->artisan('blacksmith:make-server', ['instance' => 'box', '--ip' => '198.51.100.7'])

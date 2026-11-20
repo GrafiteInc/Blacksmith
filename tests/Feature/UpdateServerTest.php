@@ -14,7 +14,7 @@ class UpdateServerTest extends TestCase
     protected function mockMatchingServer($forge, ?array $sites = null, ?array $processes = null, ?array $jobs = null)
     {
         $forge->shouldReceive('server')->with(100)->andReturn($this->server());
-        $forge->shouldReceive('phpVersions')->with(100)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('phpVersions')->with(100)->andReturn([new PHPVersion(['version' => '8.4', 'binary_name' => 'php8.4', 'status' => 'installed'])]);
         $forge->shouldReceive('sites')->with(100)->andReturn($sites ?? [$this->site()]);
         $forge->shouldReceive('scheduledJobs')->with(100)->andReturn($jobs ?? [$this->schedulerJob(9)]);
         $forge->shouldReceive('siteEnvironmentFile')->andReturn("APP_NAME=Example\nAPP_URL=https://example.com\n");
@@ -38,6 +38,21 @@ class UpdateServerTest extends TestCase
 
         $this->artisan('blacksmith:update-server', ['instance' => 'prod'])
             ->expectsOutputToContain('prod example.com: Update environment')
+            ->assertSuccessful();
+    }
+
+    public function test_a_php_version_the_server_is_missing_is_installed()
+    {
+        $this->seedBlueprint();
+        $this->blueprints()->saveProfile('app', array_replace($this->blueprints()->profile('app'), ['php_version' => 'php85', 'php_cli_version' => 'php84']));
+
+        $forge = $this->forge();
+        $this->mockMatchingServer($forge);
+        $forge->shouldReceive('installPHP')->once()->with(100, 'php85');
+        $forge->shouldReceive('updatePhpLimits')->once();
+
+        $this->artisan('blacksmith:update-server', ['instance' => 'prod', '--only' => 'server'])
+            ->expectsOutputToContain('prod: Install php85')
             ->assertSuccessful();
     }
 

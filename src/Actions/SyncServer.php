@@ -5,6 +5,7 @@ namespace Grafite\Blacksmith\Actions;
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\Php;
 use Grafite\Blacksmith\Support\Plan;
 use Laravel\Forge\Resources\ServerTypes;
 
@@ -28,7 +29,8 @@ class SyncServer
         $server = $this->forge->server($serverId);
         $label = "{$instance}: ";
 
-        $installed = collect($this->forge->phpVersions($serverId))->pluck('version');
+        // Forge lists installed versions as 8.4 but names them php84 everywhere else.
+        $installed = collect($this->forge->phpVersions($serverId))->map(fn ($php) => Php::name($php->version));
 
         foreach (array_unique([$profile['php_version'], $profile['php_cli_version']]) as $version) {
             if ($version && ! $installed->contains($version)) {

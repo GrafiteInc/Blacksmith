@@ -92,7 +92,7 @@ abstract class TestCase extends OrchestraTestCase
         $forge->shouldReceive('createCustomServer')->once()->ordered()->withArgs(fn ($payload) => $payload['provider'] === 'custom' && $payload['type'] === $type)
             ->andReturnUsing(fn ($payload) => new Server(['id' => $id, 'name' => $payload['name'], 'type' => $type, 'provision_command' => "curl forge/{$id} | bash"]));
         $forge->shouldReceive('server')->with($id)->andReturn($this->server(['id' => $id, 'is_ready' => true, 'type' => $type]));
-        $forge->shouldReceive('phpVersions')->with($id)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('phpVersions')->with($id)->andReturn([new PHPVersion(['version' => '8.4', 'binary_name' => 'php8.4', 'status' => 'installed'])]);
         $forge->shouldReceive('updatePhpLimits')->with($id, Mockery::any(), Mockery::any());
     }
 
