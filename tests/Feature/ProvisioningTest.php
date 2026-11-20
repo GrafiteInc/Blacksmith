@@ -125,6 +125,66 @@ class ProvisioningTest extends TestCase
         $this->assertSame('loadbalancer', $this->blueprints()->profile('balancer')['type']);
     }
 
+    public function test_instance_with_dns_points_it_before_the_certificate()
+    {
+        $this->seedBlueprint();
+        $dns = $this->dns(['example.com' => [['content' => '10.0.0.1']], 'www.example.com' => [['type' => 'CNAME', 'content' => 'example.com']]]);
+
+        $forge = $this->forge();
+        $this->mockNewServer($forge, 800);
+
+        $forge->shouldReceive('sites')->with(800)->andReturn([], [$this->site(['id' => 801, 'https' => false])]);
+        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 801, 'https' => false]));
+        $forge->shouldReceive('syncAliases', 'updateSiteEnvironmentFile', 'updateSiteDeploymentScript', 'createScheduledJob', 'createBackgroundProcess')->once();
+        $forge->shouldReceive('scheduledJobs', 'backgroundProcesses', 'redirectRules', 'securityRules')->andReturn([]);
+        $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->andReturnUsing(function () use ($dns) {
+            $this->assertSame(['203.0.113.1'], $dns->addresses('example.com'), 'DNS moves before the certificate is requested.');
+        });
+        $forge->shouldReceive('deploySite')->once()->with(800, 801);
+
+        $this->artisan('blacksmith:instance', ['name' => 'staging', '--dns' => true])
+            ->expectsOutputToContain('DNS example.com: Point A record 10.0.0.1 (prod) → 203.0.113.1 (staging)')
+            ->doesntExpectOutputToContain('Point DNS at it when you are ready')
+            ->assertSuccessful();
+
+        $this->assertSame(['update example.com example.com-0 203.0.113.1'], $dns->calls);
+    }
+
+    public function test_instance_dns_needs_a_provider()
+    {
+        $this->seedBlueprint();
+        $this->forge()->shouldNotReceive('createCustomServer');
+
+        $this->artisan('blacksmith:instance', ['name' => 'staging', '--dns' => true])
+            ->expectsOutputToContain('--dns needs a DNS provider')
+            ->assertFailed();
+    }
+
+    public function test_balancer_takes_over_dns_and_gets_its_certificate()
+    {
+        $this->seedBlueprint();
+        $dns = $this->dns(['example.com' => [['content' => '10.0.0.1']], 'www.example.com' => [['content' => '10.0.0.1']]]);
+
+        $forge = $this->forge();
+        $this->mockNewServer($forge, 900, 'loadbalancer');
+
+        $forge->shouldReceive('sites')->with(900)->andReturn([], [$this->site(['id' => 901, 'https' => false])]);
+        $forge->shouldReceive('createBalancer')->once()->andReturn($this->site(['id' => 901, 'https' => false]));
+        $forge->shouldReceive('syncAliases', 'updateBalancingNodes')->once();
+        $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
+        $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->withArgs(fn ($server, $site) => $server === 900 && $site === 901)
+            ->andReturnUsing(function () use ($dns) {
+                $this->assertSame(['203.0.113.1'], $dns->addresses('www.example.com'), 'DNS moves before the certificate is requested.');
+            });
+
+        $this->artisan('blacksmith:balancer', ['name' => 'lb'])
+            ->doesntExpectOutputToContain('Point DNS at the balancer')
+            ->expectsOutputToContain('blacksmith:scale example.com --to=2')
+            ->assertSuccessful();
+
+        $this->assertSame(['203.0.113.1'], $dns->addresses('example.com'));
+    }
+
     public function test_scale_adds_web_only_nodes()
     {
         $this->seedBlueprint();

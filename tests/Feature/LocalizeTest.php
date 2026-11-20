@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use Grafite\Blacksmith\Dns\DnsProvider;
 use Laravel\Forge\Resources\LoadBalancingNode;
 use Laravel\Forge\Resources\RedirectRule;
 use Laravel\Forge\Resources\SecurityRule;
+use Mockery;
 use Tests\TestCase;
 
 class LocalizeTest extends TestCase
@@ -114,5 +116,55 @@ class LocalizeTest extends TestCase
         $this->assertSame(2, $pool['options']['production']['weight']);
         $this->assertSame('balancer', $this->state()->instance('balancer')['profile']);
         $this->assertTrue($this->blueprints()->hasSite('example.com'));
+    }
+
+    public function test_localize_finds_the_dns_zone_and_reports_where_records_point()
+    {
+        $forge = $this->forge();
+        $this->mockServer($forge, ['id' => 100], ['id' => 200], "APP_URL=https://example.com\n");
+
+        $dns = $this->dns([
+            'example.com' => [['content' => '10.0.0.1', 'proxied' => true]],
+            'www.example.com' => [['type' => 'CNAME', 'content' => 'example.com']],
+        ]);
+
+        $this->artisan('blacksmith:localize', ['--server' => 100])
+            ->expectsOutputToContain('DNS example.com: A 10.0.0.1 → production (proxied)')
+            ->expectsOutputToContain('DNS www.example.com: CNAME follows example.com')
+            ->assertSuccessful();
+
+        $this->assertSame('zone-1', $this->state()->dnsZone('example.com'));
+        $this->assertSame([], $dns->calls);
+    }
+
+    public function test_dns_problems_are_warnings()
+    {
+        $forge = $this->forge();
+        $this->mockServer($forge, ['id' => 100], ['id' => 200], "APP_URL=https://example.com\n");
+
+        $this->dns(['example.com' => [['content' => '198.51.100.7', 'proxied' => false]]]);
+
+        $this->artisan('blacksmith:localize', ['--server' => 100])
+            ->expectsOutputToContain('DNS example.com: A 198.51.100.7 is not a Blacksmith instance')
+            ->expectsOutputToContain('DNS www.example.com: no record')
+            ->assertSuccessful();
+
+        $this->dns([], []);
+
+        $this->artisan('blacksmith:localize', ['--server' => 100])
+            ->expectsOutputToContain('example.com: no fake zone found, set "dns": false')
+            ->assertSuccessful();
+    }
+
+    public function test_localize_skips_dns_when_it_is_off()
+    {
+        $forge = $this->forge();
+        $this->mockServer($forge, ['id' => 100], ['id' => 200], "APP_URL=https://example.com\n");
+
+        $this->app->instance(DnsProvider::class, Mockery::mock(DnsProvider::class)->shouldNotReceive('zoneFor', 'records')->getMock());
+
+        $this->artisan('blacksmith:localize', ['--server' => 100])->assertSuccessful();
+
+        $this->assertNull($this->state()->dnsZone('example.com'));
     }
 }

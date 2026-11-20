@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Dns\DnsProvider;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Laravel\Forge\Resources\ServerTypes;
+use RuntimeException;
+use Tests\Fakes\FakeDnsProvider;
 use Tests\Fakes\FakeServerProvider;
 use Tests\TestCase;
 
@@ -153,6 +156,109 @@ class ReplaceTest extends TestCase
         $this->assertSame('primary', $this->state()->roleFor('prod', 'example.com'));
         $this->assertSame('web', $this->state()->roleFor('prod-old', 'example.com'));
         $this->assertSame([], $this->provider->destroyed);
+    }
+
+    /**
+     * The Forge calls of a cutover from prod (100/200) to prod-next (800/801).
+     */
+    protected function mockCutover($forge, bool $certificate = true)
+    {
+        $forge->shouldReceive('sites')->with(100)->andReturn([$this->site()]);
+        $forge->shouldReceive('scheduledJobs')->with(100)->andReturn([$this->schedulerJob(9)]);
+        $forge->shouldReceive('backgroundProcesses')->with(100)->andReturn([$this->worker(1, ['connection' => 'redis', 'processes' => 2])]);
+        $forge->shouldReceive('deleteScheduledJob', 'deleteBackgroundProcess')->once();
+
+        $forge->shouldReceive('sites')->with(800)->andReturn([$this->site(['id' => 801, 'https' => false])]);
+        $forge->shouldReceive('scheduledJobs')->with(800)->andReturn([]);
+        $forge->shouldReceive('backgroundProcesses')->with(800)->andReturn([]);
+        $forge->shouldReceive('createScheduledJob', 'createBackgroundProcess')->once();
+
+        if (! $certificate) {
+            $forge->shouldNotReceive('obtainLetsEncryptCertificate');
+        }
+    }
+
+    public function test_cutover_points_dns_at_the_new_server_before_the_certificate()
+    {
+        $this->seedBlueprint();
+        $this->seedReplacement();
+        $dns = $this->dns(['example.com' => [['content' => '10.0.0.1']], 'www.example.com' => [['content' => '10.0.0.1']]]);
+
+        $forge = $this->forge();
+        $this->mockCutover($forge);
+        $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->andReturnUsing(function () use ($dns) {
+            $this->assertSame(['203.0.113.1'], $dns->addresses('example.com'), 'DNS moves before the certificate is requested.');
+            $this->assertSame(['203.0.113.1'], $dns->addresses('www.example.com'));
+        });
+
+        $this->artisan('blacksmith:replace', ['instance' => 'prod', '--cutover' => true])
+            ->expectsOutputToContain('DNS example.com: Point A record 10.0.0.1 (prod-old) → 203.0.113.1 (prod)')
+            ->expectsConfirmation('Delete the old server prod-old (10.0.0.1) now?', 'no')
+            ->assertSuccessful();
+
+        $this->assertCount(2, $dns->calls);
+    }
+
+    public function test_cutover_without_dns_leaves_the_records_alone()
+    {
+        $this->seedBlueprint();
+        $this->seedReplacement();
+        $dns = $this->dns(['example.com' => [['content' => '10.0.0.1']]]);
+
+        $forge = $this->forge();
+        $this->mockCutover($forge);
+        $forge->shouldReceive('obtainLetsEncryptCertificate')->once();
+
+        $this->artisan('blacksmith:replace', ['instance' => 'prod', '--cutover' => true, '--no-dns' => true])
+            ->expectsConfirmation('Delete the old server prod-old (10.0.0.1) now?', 'no')
+            ->assertSuccessful();
+
+        $this->assertSame([], $dns->calls);
+    }
+
+    public function test_a_dns_failure_still_moves_the_scheduler_and_workers()
+    {
+        $this->seedBlueprint();
+        $this->seedReplacement();
+
+        config(['blacksmith.dns.provider' => 'fake']);
+        $this->app->instance(DnsProvider::class, new class extends FakeDnsProvider
+        {
+            public function records(string $hostname): array
+            {
+                throw new RuntimeException('Cloudflare is down');
+            }
+        });
+
+        $forge = $this->forge();
+        $this->mockCutover($forge, certificate: false);
+
+        $this->artisan('blacksmith:replace', ['instance' => 'prod', '--cutover' => true])
+            ->expectsOutputToContain('DNS: Cloudflare is down')
+            ->expectsOutputToContain('Finish with: php artisan blacksmith:dns prod && php artisan blacksmith:update-server prod --only=ssl')
+            ->assertFailed();
+
+        $this->assertSame(800, $this->state()->instance('prod')['server_id']);
+        $this->assertSame('prod-old', $this->state()->retiredFor('prod'));
+    }
+
+    public function test_replace_says_dns_moves_on_cutover()
+    {
+        $this->seedBlueprint();
+        $this->dns();
+
+        $forge = $this->forge();
+        $this->mockNewServer($forge, 800);
+        $forge->shouldReceive('sites')->with(800)->andReturn([]);
+        $forge->shouldReceive('createSite')->once()->andReturn($this->site(['id' => 801, 'https' => false]));
+        $forge->shouldReceive('syncAliases', 'updateSiteDeploymentScript', 'updateSiteEnvironmentFile', 'deploySite')->once();
+        $forge->shouldReceive('scheduledJobs', 'backgroundProcesses', 'redirectRules', 'securityRules')->andReturn([]);
+
+        $this->artisan('blacksmith:replace', ['instance' => 'prod'])
+            ->doesntExpectOutputToContain('Point DNS for')
+            ->expectsOutputToContain('3. php artisan blacksmith:replace prod --cutover')
+            ->expectsOutputToContain('DNS for example.com will be pointed at 203.0.113.1 on cutover (fake)')
+            ->assertSuccessful();
     }
 
     public function test_cutover_of_a_pooled_node_repoints_the_balancer()

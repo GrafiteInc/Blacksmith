@@ -5,6 +5,7 @@ namespace Tests;
 use Grafite\Blacksmith\Actions\SyncWorkers;
 use Grafite\Blacksmith\BlacksmithProvider;
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
+use Grafite\Blacksmith\Dns\DnsProvider;
 use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Illuminate\Filesystem\Filesystem;
@@ -17,6 +18,7 @@ use Laravel\Forge\Resources\Site;
 use Mockery;
 use Mockery\MockInterface;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use Tests\Fakes\FakeDnsProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -43,6 +45,7 @@ abstract class TestCase extends OrchestraTestCase
         $app['config']->set('blacksmith.defaults.server.php_cli_version', 'php84');
         $app['config']->set('blacksmith.defaults.site.php_version', 'php84');
         $app['config']->set('blacksmith.defaults.worker.php_version', 'php');
+        $app['config']->set('blacksmith.defaults.worker.timeout', 60);
     }
 
     protected function setUp(): void
@@ -57,6 +60,19 @@ abstract class TestCase extends OrchestraTestCase
         (new Filesystem)->deleteDirectory($this->root);
 
         parent::tearDown();
+    }
+
+    /**
+     * Turn DNS on with an in-memory provider.
+     */
+    protected function dns(array $records = [], array $zones = ['example.com' => 'zone-1']): FakeDnsProvider
+    {
+        config(['blacksmith.dns.provider' => 'fake']);
+
+        $dns = new FakeDnsProvider($records, $zones);
+        $this->app->instance(DnsProvider::class, $dns);
+
+        return $dns;
     }
 
     protected function forge(): MockInterface
