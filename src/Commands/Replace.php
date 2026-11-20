@@ -55,7 +55,7 @@ class Replace extends BlacksmithCommand
             return match ($steps[0] ?? 'build') {
                 'build' => $this->build($replace, $instance),
                 'cutover' => $this->cutover($replace, $instance),
-                'finish' => $this->remove($replace, $instance, 'finish', $replace->retired($instance)),
+                'finish' => $this->finish($replace, $instance),
                 'abort' => $this->remove($replace, $instance, 'abort', $replace->replacement($instance)),
             };
         } catch (RuntimeException $exception) {
@@ -85,6 +85,13 @@ class Replace extends BlacksmithCommand
             foreach (EnvFile::replaceWarnings($this->blueprints()->env($domain, $instance)) as $warning) {
                 $this->warn("{$domain}: {$warning}");
             }
+        }
+
+        $certified = array_filter($public, fn ($domain) => $this->blueprints()->site($domain)['lets_encrypt']);
+
+        if ($certified && ! ReplaceInstance::certificateBeforeCutover()) {
+            $this->warn("HTTPS on {$ip} fails from the moment DNS moves until its Let's Encrypt certificate is issued (http-01 needs DNS to point at it first). "
+                ."To avoid that, set defaults.certificate.verification_method to dns-01 before replacing, or keep the records proxied with Cloudflare's SSL mode on Full.");
         }
 
         if (empty($public)) {
@@ -122,8 +129,15 @@ class Replace extends BlacksmithCommand
 
         $this->info("{$instance} is now on {$this->state()->instance($instance)['ip_address']}, the old server is kept as {$retired}.");
 
+        if (($until = $replace->drainUntil($instance)) && ! $this->option('force')) {
+            $this->line("DNS caches can still send visitors to {$retired} ({$old['ip_address']}) until {$until->toDateTimeString()}, so it keeps serving until then.");
+            $this->line("After that, delete it with: php artisan blacksmith:replace {$instance} --finish");
+
+            return self::SUCCESS;
+        }
+
         if ($this->option('force') || $this->confirm("Delete the old server {$retired} ({$old['ip_address']}) now?", false)) {
-            $replace->finish($instance, $plan);
+            $replace->finish($instance, $plan, true);
             $this->info("Deleted {$retired}.");
 
             return self::SUCCESS;
@@ -132,6 +146,17 @@ class Replace extends BlacksmithCommand
         $this->line("Once you are happy with {$instance}, delete the old server with: php artisan blacksmith:replace {$instance} --finish");
 
         return self::SUCCESS;
+    }
+
+    protected function finish(ReplaceInstance $replace, string $instance): int
+    {
+        $retired = $replace->retired($instance);
+
+        if (! $this->option('force')) {
+            $replace->ensureDrained($instance);
+        }
+
+        return $this->remove($replace, $instance, 'finish', $retired);
     }
 
     protected function remove(ReplaceInstance $replace, string $instance, string $step, string $target): int
@@ -144,7 +169,9 @@ class Replace extends BlacksmithCommand
             return self::SUCCESS;
         }
 
-        $replace->{$step}($instance, $this->plan());
+        $step === 'finish'
+            ? $replace->finish($instance, $this->plan(), true)
+            : $replace->abort($instance, $this->plan());
 
         $this->info("Deleted {$target}.");
 

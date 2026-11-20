@@ -22,6 +22,17 @@ class EnvFileTest extends TestCase
         $this->assertSame("# App\nAPP_NAME=Example\nAPP_URL=https://staging.example.com\nNEW_KEY=1".PHP_EOL, $merged);
     }
 
+    public function test_replace_warns_about_everything_that_stays_on_the_old_server()
+    {
+        $warnings = implode(PHP_EOL, EnvFile::replaceWarnings("REDIS_HOST=127.0.0.1\nSESSION_DRIVER=file\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\n"));
+
+        $this->assertStringContainsString('REDIS_HOST=127.0.0.1 means Redis is on the old server', $warnings);
+        $this->assertStringContainsString('SESSION_DRIVER=file', $warnings);
+        $this->assertStringContainsString('CACHE_STORE=file', $warnings);
+        $this->assertStringContainsString('QUEUE_CONNECTION=sync', $warnings);
+        $this->assertSame([], EnvFile::replaceWarnings("REDIS_HOST=redis.internal\nSESSION_DRIVER=redis\nCACHE_STORE=redis\nQUEUE_CONNECTION=redis\n"));
+    }
+
     public function test_merge_without_overrides_returns_base()
     {
         $this->assertSame("A=1\n", EnvFile::merge("A=1\n", "# nothing\n"));

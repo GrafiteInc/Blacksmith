@@ -49,7 +49,16 @@ class PointDns
             ->toArray();
     }
 
-    public function handle(string $domain, string $instance, Plan $plan, bool $force = false): void
+    /**
+     * Cloudflare's "automatic" TTL, in seconds.
+     */
+    public const AUTOMATIC_TTL = 300;
+
+    /**
+     * Point the records and return how long, in seconds, resolvers may keep sending visitors
+     * to the old address. Proxied records switch at the edge, so they don't count.
+     */
+    public function handle(string $domain, string $instance, Plan $plan, bool $force = false): int
     {
         if (! static::enabled()) {
             throw new RuntimeException('DNS is not configured, set BLACKSMITH_DNS_PROVIDER=cloudflare and BLACKSMITH_CLOUDFLARE_TOKEN.');
@@ -58,7 +67,7 @@ class PointDns
         if (! $this->manages($domain)) {
             $plan->note("{$domain}: DNS is managed by hand (\"dns\": false), skipped.");
 
-            return;
+            return 0;
         }
 
         $ip = $this->state->instance($instance)['ip_address'] ?? null;
@@ -70,6 +79,7 @@ class PointDns
         $dns = $this->provider();
         $known = $this->state->knownIps();
         $managed = $this->managedHostnames();
+        $drain = 0;
 
         foreach ($this->hostnames($domain) as $hostname) {
             $label = "DNS {$hostname}: ";
@@ -121,7 +131,25 @@ class PointDns
             $from = $from ? "{$record['content']} ({$from})" : $record['content'];
 
             $plan->step($label."Point A record {$from} → {$ip} ({$instance})", fn () => $dns->updateARecord($hostname, $record['id'], $ip));
+
+            $drain = max($drain, static::drainSeconds($record));
         }
+
+        return $drain;
+    }
+
+    /**
+     * How long resolvers can keep a record's old address.
+     */
+    public static function drainSeconds(array $record): int
+    {
+        if (! empty($record['proxied'])) {
+            return 0;
+        }
+
+        $ttl = (int) ($record['ttl'] ?? 0);
+
+        return $ttl <= 1 ? static::AUTOMATIC_TTL : $ttl;
     }
 
     public function provider(): DnsProvider

@@ -110,6 +110,24 @@ class EnvFile
             $warnings[] = "FILESYSTEM_DISK={$env->get('FILESYSTEM_DISK')} keeps uploads in storage/ on the old server, they are not copied.";
         }
 
+        if (in_array($env->get('REDIS_HOST'), ['127.0.0.1', 'localhost'], true)) {
+            $warnings[] = "REDIS_HOST={$env->get('REDIS_HOST')} means Redis is on the old server, queued jobs, cache and sessions in it stay behind at cutover.";
+        }
+
+        if ($env->get('SESSION_DRIVER') === 'file') {
+            $warnings[] = 'SESSION_DRIVER=file keeps sessions on the old server, everyone is signed out at cutover.';
+        }
+
+        foreach (['CACHE_STORE', 'CACHE_DRIVER'] as $key) {
+            if ($env->get($key) === 'file') {
+                $warnings[] = "{$key}=file keeps the cache on the old server, the new one starts cold.";
+            }
+        }
+
+        if ($env->get('QUEUE_CONNECTION') === 'sync') {
+            $warnings[] = 'QUEUE_CONNECTION=sync runs jobs during the request, so there are no workers to move.';
+        }
+
         return $warnings;
     }
 }
