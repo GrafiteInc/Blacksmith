@@ -3,6 +3,18 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.6] - 2026-11-20
+
+### Feature
+- manage access during server lifecycle
+- print server access report after commands
+- add server access setup and command
+- reset sudo password via throwaway recipe
+- add SSH config and access report support
+
+### Fix
+- send Forge API v2 values when creating and syncing sites
+
 ## [v2.1.5] - 2026-11-20
 
 ### Fix
