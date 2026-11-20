@@ -3,6 +3,14 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.7] - 2026-11-20
+
+### Feature
+- support Let's Encrypt key type config
+
+### Fix
+- retry env and deploy script writes while new site installs
+
 ## [v2.1.6] - 2026-11-20
 
 ### Feature
