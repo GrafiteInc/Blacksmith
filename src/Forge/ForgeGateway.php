@@ -13,6 +13,8 @@ use Laravel\Forge\Exceptions\ValidationException;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\BackgroundProcess;
 use Laravel\Forge\Resources\Deployment;
+use Laravel\Forge\Resources\Recipe;
+use Laravel\Forge\Resources\RecipeRun;
 use Laravel\Forge\Resources\Server;
 use Laravel\Forge\Resources\ServerCredential;
 use Laravel\Forge\Resources\Site;
@@ -451,6 +453,45 @@ class ForgeGateway
             'balancer_method' => $method,
             'balancing' => $nodes,
         ]));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Recipes
+    |--------------------------------------------------------------------------
+    */
+
+    public function createRecipe(string $name, string $user, string $script): Recipe
+    {
+        return $this->send("creating recipe {$name}", fn () => $this->forge->createRecipe($this->organization(), [
+            'name' => $name,
+            'user' => $user,
+            'script' => $script,
+        ]));
+    }
+
+    /**
+     * Run a recipe on one server, Forge runs it in the background.
+     */
+    public function runRecipe(int $recipeId, int $serverId): void
+    {
+        $this->send("running recipe {$recipeId} on server {$serverId}", fn () => $this->forge->createRecipeRun($this->organization(), $recipeId, [
+            'servers' => [$serverId],
+            'notify' => false,
+        ]));
+    }
+
+    /**
+     * @return RecipeRun[]
+     */
+    public function recipeRuns(int $recipeId): array
+    {
+        return $this->all($this->forge->recipeRuns($this->organization(), $recipeId));
+    }
+
+    public function deleteRecipe(int $recipeId): void
+    {
+        $this->forge->deleteRecipe($this->organization(), $recipeId);
     }
 
     /*
