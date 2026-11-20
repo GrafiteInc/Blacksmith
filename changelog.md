@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.4] - 2026-11-20
+
+### Fix
+- have Forge create DigitalOcean servers itself
+
 ## [v2.1.3] - 2026-11-20
 
 ### Fix
