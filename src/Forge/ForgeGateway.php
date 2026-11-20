@@ -2,10 +2,14 @@
 
 namespace Grafite\Blacksmith\Forge;
 
+use Closure;
 use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\Poll;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Laravel\Forge\CursorPaginator;
+use Laravel\Forge\Exceptions\FailedActionException;
+use Laravel\Forge\Exceptions\ValidationException;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\BackgroundProcess;
 use Laravel\Forge\Resources\Deployment;
@@ -91,7 +95,7 @@ class ForgeGateway
 
         unset($payload['ip_address'], $payload['private_ip_address']);
 
-        return $this->forge->createServer($this->organization(), $payload, false);
+        return $this->send("creating server {$payload['name']}", fn () => $this->forge->createServer($this->organization(), $payload, false));
     }
 
     public function deleteServer(int $serverId): void
@@ -106,23 +110,23 @@ class ForgeGateway
 
     public function installPHP(int $serverId, string $version): void
     {
-        $this->forge->installPhpVersion($this->organization(), $serverId, ['version' => $version]);
+        $this->send("installing {$version} on server {$serverId}", fn () => $this->forge->installPhpVersion($this->organization(), $serverId, ['version' => $version]));
     }
 
     public function enableOPCache(int $serverId): void
     {
-        $this->forge->createPhpOpcache($this->organization(), $serverId, []);
+        $this->send("enabling OPcache on server {$serverId}", fn () => $this->forge->createPhpOpcache($this->organization(), $serverId, []));
     }
 
     public function disableOPCache(int $serverId): void
     {
-        $this->forge->deletePhpOpcache($this->organization(), $serverId);
+        $this->send("disabling OPcache on server {$serverId}", fn () => $this->forge->deletePhpOpcache($this->organization(), $serverId));
     }
 
     public function updatePhpLimits(int $serverId, int $maxUploadSize, int $maxExecutionTime): void
     {
-        $this->forge->updatePhpMaxUploadSize($this->organization(), $serverId, ['max_upload_size' => $maxUploadSize]);
-        $this->forge->updatePhpMaxExecutionTime($this->organization(), $serverId, ['max_execution_time' => $maxExecutionTime]);
+        $this->send("the max upload size on server {$serverId}", fn () => $this->forge->updatePhpMaxUploadSize($this->organization(), $serverId, ['max_upload_size' => $maxUploadSize]));
+        $this->send("the max execution time on server {$serverId}", fn () => $this->forge->updatePhpMaxExecutionTime($this->organization(), $serverId, ['max_execution_time' => $maxExecutionTime]));
     }
 
     /*
@@ -146,17 +150,17 @@ class ForgeGateway
 
     public function createSite(int $serverId, array $payload): Site
     {
-        return $this->forge->createSite($this->organization(), $serverId, $payload);
+        return $this->send('creating site '.($payload['domain'] ?? $payload['name'] ?? '')." on server {$serverId}", fn () => $this->forge->createSite($this->organization(), $serverId, $payload));
     }
 
     public function createBalancer(int $serverId, array $payload): Site
     {
-        return $this->forge->createBalancer($this->organization(), $serverId, $payload);
+        return $this->send('creating balancer '.($payload['domain'] ?? $payload['name'] ?? '')." on server {$serverId}", fn () => $this->forge->createBalancer($this->organization(), $serverId, $payload));
     }
 
     public function updateSite(int $serverId, int $siteId, array $payload): void
     {
-        $this->forge->updateSite($this->organization(), $serverId, $siteId, $payload);
+        $this->send("updating site {$siteId}", fn () => $this->forge->updateSite($this->organization(), $serverId, $siteId, $payload));
     }
 
     public function deleteSite(int $serverId, int $siteId): void
@@ -180,11 +184,11 @@ class ForgeGateway
         }
 
         foreach (array_diff($aliases, $existing->pluck('name')->toArray()) as $alias) {
-            $this->forge->createDomain($organization, $serverId, $siteId, [
+            $this->send("adding alias {$alias} to site {$siteId}", fn () => $this->forge->createDomain($organization, $serverId, $siteId, [
                 'name' => $alias,
                 'allow_wildcard_subdomains' => (bool) Defaults::get('domain.allow_wildcard_subdomains', false),
                 'www_redirect_type' => Defaults::get('domain.www_redirect_type', 'none'),
-            ]);
+            ]));
         }
     }
 
@@ -195,7 +199,7 @@ class ForgeGateway
 
     public function updateSiteEnvironmentFile(int $serverId, int $siteId, string $contents): void
     {
-        $this->forge->updateSiteEnvironment($this->organization(), $serverId, $siteId, $contents);
+        $this->send("the env of site {$siteId}", fn () => $this->forge->updateSiteEnvironment($this->organization(), $serverId, $siteId, $contents));
     }
 
     public function siteDeploymentScript(int $serverId, int $siteId): string
@@ -205,12 +209,12 @@ class ForgeGateway
 
     public function updateSiteDeploymentScript(int $serverId, int $siteId, string $contents): void
     {
-        $this->forge->updateDeploymentScript($this->organization(), $serverId, $siteId, ['content' => $contents]);
+        $this->send("the deploy script of site {$siteId}", fn () => $this->forge->updateDeploymentScript($this->organization(), $serverId, $siteId, ['content' => $contents]));
     }
 
     public function deploySite(int $serverId, int $siteId): Deployment
     {
-        return $this->forge->createDeployment($this->organization(), $serverId, $siteId);
+        return $this->send("deploying site {$siteId}", fn () => $this->forge->createDeployment($this->organization(), $serverId, $siteId));
     }
 
     public function deployment(int $serverId, int $siteId, int $deploymentId): Deployment
@@ -281,12 +285,12 @@ class ForgeGateway
 
     public function enableQuickDeploy(int $serverId, int $siteId): void
     {
-        $this->forge->enablePushToDeploy($this->organization(), $serverId, $siteId, []);
+        $this->send("enabling quick deploy on site {$siteId}", fn () => $this->forge->enablePushToDeploy($this->organization(), $serverId, $siteId, []));
     }
 
     public function disableQuickDeploy(int $serverId, int $siteId): void
     {
-        $this->forge->disablePushToDeploy($this->organization(), $serverId, $siteId);
+        $this->send("disabling quick deploy on site {$siteId}", fn () => $this->forge->disablePushToDeploy($this->organization(), $serverId, $siteId));
     }
 
     /**
@@ -303,10 +307,10 @@ class ForgeGateway
         }
 
         foreach ($records as $record) {
-            $this->forge->createCertificate($organization, $serverId, $siteId, $record->id, [
+            $this->send("a certificate for {$record->name}", fn () => $this->forge->createCertificate($organization, $serverId, $siteId, $record->id, [
                 'type' => 'letsencrypt',
                 'letsencrypt' => ['verification_method' => Defaults::get('certificate.verification_method', 'http-01')],
-            ]);
+            ]));
         }
     }
 
@@ -323,7 +327,7 @@ class ForgeGateway
 
     public function createScheduledJob(int $serverId, array $payload): void
     {
-        $this->forge->createScheduledJob($this->organization(), $serverId, $payload);
+        $this->send("creating a scheduled job on server {$serverId}", fn () => $this->forge->createScheduledJob($this->organization(), $serverId, $payload));
     }
 
     public function deleteScheduledJob(int $serverId, int $jobId): void
@@ -347,7 +351,7 @@ class ForgeGateway
 
     public function createBackgroundProcess(int $serverId, array $payload): BackgroundProcess
     {
-        return $this->forge->createBackgroundProcess($this->organization(), $serverId, $payload);
+        return $this->send("creating a background process on server {$serverId}", fn () => $this->forge->createBackgroundProcess($this->organization(), $serverId, $payload));
     }
 
     public function deleteBackgroundProcess(int $serverId, int $processId): void
@@ -357,7 +361,7 @@ class ForgeGateway
 
     public function restartBackgroundProcess(int $serverId, int $processId): void
     {
-        $this->forge->performBackgroundProcessAction($this->organization(), $serverId, $processId, ['action' => 'restart']);
+        $this->send("restarting background process {$processId}", fn () => $this->forge->performBackgroundProcessAction($this->organization(), $serverId, $processId, ['action' => 'restart']));
     }
 
     /*
@@ -373,7 +377,7 @@ class ForgeGateway
 
     public function createRedirectRule(int $serverId, int $siteId, array $rule): void
     {
-        $this->forge->createRedirectRule($this->organization(), $serverId, $siteId, $rule);
+        $this->send("a redirect rule on site {$siteId}", fn () => $this->forge->createRedirectRule($this->organization(), $serverId, $siteId, $rule));
     }
 
     public function deleteRedirectRule(int $serverId, int $siteId, int $ruleId): void
@@ -388,7 +392,7 @@ class ForgeGateway
 
     public function createSecurityRule(int $serverId, int $siteId, array $rule): void
     {
-        $this->forge->createSecurityRule($this->organization(), $serverId, $siteId, $rule);
+        $this->send("a security rule on site {$siteId}", fn () => $this->forge->createSecurityRule($this->organization(), $serverId, $siteId, $rule));
     }
 
     public function deleteSecurityRule(int $serverId, int $siteId, int $ruleId): void
@@ -412,10 +416,10 @@ class ForgeGateway
      */
     public function updateBalancingNodes(int $serverId, int $siteId, array $nodes, string $method): void
     {
-        $this->forge->updateLoadBalancingNodes($this->organization(), $serverId, $siteId, [
+        $this->send("the balancer nodes of site {$siteId}", fn () => $this->forge->updateLoadBalancingNodes($this->organization(), $serverId, $siteId, [
             'balancer_method' => $method,
             'balancing' => $nodes,
-        ]);
+        ]));
     }
 
     /*
@@ -459,6 +463,42 @@ class ForgeGateway
             'repository' => preg_replace('/\.git$/', '', trim($name, '/')),
             'branch' => $repository['branch'] ?? null,
         ];
+    }
+
+    /**
+     * Run a Forge write, turning its rejections into errors the commands report, with Forge's reasons.
+     *
+     * The SDK's ValidationException (422) and FailedActionException (400) are not RuntimeExceptions,
+     * so without this they skip every command's error handling and lose the fields Forge named.
+     */
+    protected function send(string $action, Closure $call): mixed
+    {
+        try {
+            return $call();
+        } catch (ValidationException $exception) {
+            throw new RuntimeException("Forge rejected {$action}: ".static::reasons($exception->errors()), 422, $exception);
+        } catch (FailedActionException $exception) {
+            $body = json_decode($exception->getMessage(), true);
+
+            throw new RuntimeException("Forge rejected {$action}: ".(is_array($body) ? static::reasons($body) : $exception->getMessage()), 400, $exception);
+        }
+    }
+
+    /**
+     * "field: message" for each error in a Forge error body, or its message when it names no fields.
+     */
+    protected static function reasons(array $body): string
+    {
+        $errors = collect(is_array($body['errors'] ?? null) ? $body['errors'] : [])
+            ->map(fn ($messages, $field) => (is_string($field) ? "{$field}: " : '').implode(' ', Arr::flatten((array) $messages)))
+            ->filter()
+            ->values();
+
+        if ($errors->isNotEmpty()) {
+            return $errors->implode('; ');
+        }
+
+        return is_string($body['message'] ?? null) && $body['message'] !== '' ? $body['message'] : json_encode($body);
     }
 
     protected function all(CursorPaginator|array $items): array

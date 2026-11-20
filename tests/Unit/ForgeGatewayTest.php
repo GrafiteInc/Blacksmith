@@ -26,7 +26,7 @@ class ForgeGatewayTest extends TestCase
         $this->requests = [];
 
         $stack = HandlerStack::create(new MockHandler(array_map(
-            fn ($body) => new Response(is_null($body) ? 202 : 200, [], is_null($body) ? '' : json_encode($body)),
+            fn ($body) => $body instanceof Response ? $body : new Response(is_null($body) ? 202 : 200, [], is_null($body) ? '' : json_encode($body)),
             $responses,
         )));
         $stack->push(Middleware::history($this->requests));
@@ -105,6 +105,41 @@ class ForgeGatewayTest extends TestCase
             'name' => 'box',
             'custom' => ['ip_address' => '1.2.3.4'],
         ]]], $this->sent());
+    }
+
+    public function test_forge_rejections_name_the_fields_forge_gave()
+    {
+        $gateway = $this->gateway([
+            new Response(422, [], json_encode(['message' => 'The given data was invalid.', 'errors' => [
+                'php_version' => ['The selected php version is invalid.'],
+                'database_type' => ['The selected database type is invalid.'],
+            ]])),
+            new Response(422, [], json_encode(['message' => 'The ubuntu version is not supported.'])),
+            new Response(400, [], json_encode(['message' => 'The server is still provisioning.'])),
+        ]);
+
+        $rejected = function (callable $call) {
+            try {
+                $call();
+            } catch (RuntimeException $exception) {
+                return $exception->getMessage();
+            }
+
+            $this->fail('Forge\'s rejection was not turned into a RuntimeException.');
+        };
+
+        $this->assertSame(
+            'Forge rejected creating server box: php_version: The selected php version is invalid.; database_type: The selected database type is invalid.',
+            $rejected(fn () => $gateway->createCustomServer(['provider' => 'custom', 'name' => 'box', 'ip_address' => '1.2.3.4'])),
+        );
+        $this->assertSame(
+            'Forge rejected creating server box: The ubuntu version is not supported.',
+            $rejected(fn () => $gateway->createCustomServer(['provider' => 'custom', 'name' => 'box', 'ip_address' => '1.2.3.4'])),
+        );
+        $this->assertSame(
+            'Forge rejected installing php85 on server 700: The server is still provisioning.',
+            $rejected(fn () => $gateway->installPHP(700, 'php85')),
+        );
     }
 
     public function test_aliases_are_synced_as_domain_records()

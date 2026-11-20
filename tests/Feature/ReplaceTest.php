@@ -4,9 +4,15 @@ namespace Tests\Feature;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\Dns\DnsProvider;
+use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
+use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Deployment;
 use Laravel\Forge\Resources\ServerTypes;
 use RuntimeException;
@@ -120,6 +126,22 @@ class ReplaceTest extends TestCase
         $this->artisan('blacksmith:replace', ['instance' => 'prod', '--cutover' => true, '--abort' => true])
             ->expectsOutputToContain('Pass only one of')
             ->assertFailed();
+    }
+
+    public function test_a_server_forge_rejects_fails_with_forges_reasons()
+    {
+        $this->seedBlueprint();
+
+        $client = new Client(['base_uri' => 'https://forge.laravel.com/api/', 'http_errors' => false, 'handler' => HandlerStack::create(new MockHandler([
+            new Response(422, [], json_encode(['message' => 'The given data was invalid.', 'errors' => ['php_version' => ['The selected php version is invalid.']]])),
+        ]))]);
+        $this->app->instance(ForgeGateway::class, new ForgeGateway(new Forge('token', $client), 'acme'));
+
+        $this->artisan('blacksmith:replace', ['instance' => 'prod'])
+            ->expectsOutputToContain('Forge rejected creating server prod-next: php_version: The selected php version is invalid.')
+            ->assertFailed();
+
+        $this->assertNull($this->state()->instance('prod-next')['server_id'], 'The droplet is kept in state so --abort can destroy it.');
     }
 
     public function test_cutover_moves_the_scheduler_workers_and_certificate()
