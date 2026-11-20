@@ -3,6 +3,39 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.0] - 2026-11-20
+
+### Docs(dns)
+- document Cloudflare DNS setup
+
+### Test(dns)
+- cover DNS provider, actions, and command integration
+
+### Feat(dns)
+- add DNS actions and command integrations
+- add Cloudflare provider, config, and state zone support
+
+### Build(deps)
+- add Guzzle for Cloudflare DNS provider
+
+### Test
+- cover Forge v2 gateway, defaults and workers
+
+### Docs
+- document Forge v2 tokens and defaults
+
+### Feat(forge)!
+- add ForgeGateway and migrate actions to API v2
+
+### Feat(config)
+- add configurable defaults and Forge organization
+
+### Build(deps)!
+- bump forge-sdk and minimum Laravel version
+
+### Ci(php)
+- bump test matrix to PHP 8.4
+
 ## [v2.0.0] - 2026-11-19
 
 ### Docs(replace)
