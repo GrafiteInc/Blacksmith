@@ -48,6 +48,9 @@ BLACKSMITH_FORGE_ORGANIZATION=      # optional when the token only has one organ
 BLACKSMITH_FORGE_CREDENTIAL=        # optional when the organization has one DigitalOcean credential
 BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # optional, for connecting existing servers with --ip
 BLACKSMITH_SSH_PORT=22              # optional, the port Blacksmith and Forge SSH into new servers on
+BLACKSMITH_SUDO_PASSWORD=true       # optional, give new servers a sudo password you can see (see Server access)
+BLACKSMITH_SSH_CONFIG=true          # optional, keep a Host entry per instance in your SSH config
+BLACKSMITH_SSH_CONFIG_PATH=~/.ssh/config
 
 # optional, lets Blacksmith move DNS for you
 BLACKSMITH_DNS_PROVIDER=cloudflare
@@ -70,6 +73,7 @@ Blacksmith uses the Forge API v2, where everything belongs to an organization. C
 | `site:manage-deploys`, `site:manage-environment` | Deploy script, deployments, quick deploy and `.env` |
 | `site:manage-ssl`, `site:manage-redirects`, `site:manage-security` | Certificates, redirects and security rules |
 | `site:manage-project` | Load balancing |
+| Recipes: create, run, view runs and delete | Setting the Forge user's sudo password on new servers ([Server access](#server-access)) |
 
 `BLACKSMITH_FORGE_ORGANIZATION` is the slug in your Forge URLs. If the token can reach several organizations, Blacksmith asks you to set it.
 
@@ -122,6 +126,7 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 | `blacksmith:balancer {name} --site=` | Put a load balancer in front of a site. |
 | `blacksmith:scale {site} --to=N` | Add or remove web nodes behind the site's load balancer. `--remove=node` drains a node and then deletes it. |
 | `blacksmith:replace {instance}` | Move an instance to a fresh server, for example for a new Ubuntu version. Then `--cutover` to swap it in, `--finish` to delete the old server, or `--abort` to throw the new one away. |
+| `blacksmith:sudo-password {instance}` | Give the Forge user on an existing instance a new sudo password, refresh its SSH config entry and print its login details. |
 | `blacksmith:dns {instance}` | Point the DNS of the instance's sites at its server (needs a [DNS provider](#cloudflare-dns)). `--site=` limits it, `--force` also moves records Blacksmith doesn't manage. |
 
 ### Copy a site to a new server
@@ -198,6 +203,24 @@ The same works with `blacksmith:instance` and `blacksmith:scale` for new servers
 **Load balanced sites:** `blacksmith:update-server lb --deploy --rolling` deploys one node at a time. Each node is marked down on the balancer, deployed, and waited on before the next one goes, and the primary goes last. If a node's deployment fails, it stays out of the balancer while the other nodes keep serving. New nodes from `blacksmith:scale` only join the balancer once their first deployment has finished.
 
 How long Blacksmith waits is set by `deploy_timeout` (default 900 seconds) and `certificate_timeout` (default 300 seconds) in `config/blacksmith.php`.
+
+### Server access
+
+Forge's API v2 doesn't return the sudo password Forge gives the `forge` user, so Blacksmith sets its own. Once a new server is ready, Blacksmith creates a Forge recipe that runs `chpasswd` as root with a random 32 character password, runs it on that server and deletes it straight away, even if the run fails. The password is never written to `state.json`, the blueprints or the recipe list.
+
+At the end of `make-server`, `instance`, `balancer`, `replace` and `scale`, Blacksmith prints each new server's details once, ready to save as a 1Password Secure Note:
+
+```
+Name:           acme-prod
+IP Address:     203.0.113.1
+Username:       forge
+Sudo Password:  ••••••••••••••••
+SSH:            ssh acme-prod
+```
+
+It's printed even when a later step such as a deploy fails, so a password that's already been set isn't lost. If setting the password fails, the build carries on and the report tells you to run `php artisan blacksmith:sudo-password {instance}`. That command works on any instance, so you can use it whenever you need a fresh password. Set `BLACKSMITH_SUDO_PASSWORD=false` to skip it on new servers.
+
+Each instance also gets a `Host` entry in `~/.ssh/config`, named `{project}-{instance}` (just `{instance}` when `project` isn't set in `config/blacksmith.php`), so `ssh acme-prod` logs in as `forge`. `BLACKSMITH_SSH_PORT` and `BLACKSMITH_SSH_KEY` are added to the entry when they're set. Blacksmith only edits the entries between its own `# BEGIN blacksmith …` / `# END blacksmith …` markers and leaves the rest of the file alone. During a replacement the new server is `{project}-{instance}-next`. At `--cutover`, `{project}-{instance}` moves to the new server and `{project}-{instance}-old` points at the old one. Deleting a server (`--finish`, `--abort`, scaling down) removes its entry. Set `BLACKSMITH_SSH_CONFIG=false` to turn this off.
 
 ### Queue workers
 

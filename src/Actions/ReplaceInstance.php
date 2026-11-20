@@ -8,6 +8,7 @@ use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\Plan;
 use Grafite\Blacksmith\Support\Poll;
+use Grafite\Blacksmith\Support\SshConfig;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
@@ -34,6 +35,7 @@ class ReplaceInstance
         protected PointDns $dns,
         protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
+        protected SshConfig $ssh,
     ) {}
 
     public function reportUsing(?callable $reporter): static
@@ -145,6 +147,7 @@ class ReplaceInstance
         }
 
         $this->state->promoteReplacement($instance, $retired);
+        $this->swapSshConfig($instance, $replacement, $retired, $plan);
 
         // A DNS failure must not leave the site without its scheduler and workers, only the certificate waits for it.
         $dnsError = null;
@@ -201,6 +204,24 @@ class ReplaceInstance
         }
 
         return $retired;
+    }
+
+    /**
+     * {instance} now reaches the new server and {instance}-old the old one.
+     */
+    protected function swapSshConfig(string $instance, string $replacement, string $retired, Plan $plan): void
+    {
+        try {
+            foreach ([$instance, $retired] as $name) {
+                if ($ip = $this->state->instance($name)['ip_address'] ?? null) {
+                    $this->ssh->put($name, $ip);
+                }
+            }
+
+            $this->ssh->forget($replacement);
+        } catch (RuntimeException $exception) {
+            $plan->note("SSH config: {$exception->getMessage()}");
+        }
     }
 
     public function finish(string $instance, Plan $plan, bool $force = false): string

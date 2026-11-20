@@ -24,14 +24,24 @@ use RuntimeException;
  */
 class ProvisionServer
 {
-    use ReportsProgress;
+    use ReportsProgress {
+        reportUsing as protected useReporter;
+    }
 
     public function __construct(
         protected ForgeGateway $forge,
         protected BlueprintRepository $blueprints,
         protected StateRepository $state,
         protected RemoteShell $shell,
+        protected SetUpAccess $access,
     ) {}
+
+    public function reportUsing(?callable $reporter): static
+    {
+        $this->access->reportUsing($reporter);
+
+        return $this->useReporter($reporter);
+    }
 
     /**
      * @param  array  $attributes  extra values stored on the instance in state.json
@@ -105,6 +115,8 @@ class ProvisionServer
 
         $this->report("{$instance}: Server ready https://forge.laravel.com/servers/{$server->id}");
 
+        $this->access->handle($instance);
+
         return $this->state->instance($instance);
     }
 
@@ -142,6 +154,8 @@ class ProvisionServer
         $this->waitUntilReady($instance, $server->id);
 
         $this->report("{$instance}: Server ready https://forge.laravel.com/servers/{$server->id}");
+
+        $this->access->handle($instance);
 
         return $this->state->instance($instance);
     }

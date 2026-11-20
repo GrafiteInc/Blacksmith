@@ -6,6 +6,8 @@ use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Plan;
+use Grafite\Blacksmith\Support\SshConfig;
+use RuntimeException;
 
 /**
  * Delete an instance's Forge server and provider server, then forget it.
@@ -13,7 +15,7 @@ use Grafite\Blacksmith\Support\Plan;
  */
 class DestroyInstance
 {
-    public function __construct(protected ForgeGateway $forge, protected StateRepository $state) {}
+    public function __construct(protected ForgeGateway $forge, protected StateRepository $state, protected SshConfig $ssh) {}
 
     public function handle(string $name, Plan $plan): void
     {
@@ -29,6 +31,12 @@ class DestroyInstance
 
         if (! $plan->dryRun) {
             $this->state->forgetInstance($name);
+
+            try {
+                $this->ssh->forget($name);
+            } catch (RuntimeException $exception) {
+                $plan->note("{$name}: The SSH config entry was not removed: {$exception->getMessage()}");
+            }
         }
     }
 }
