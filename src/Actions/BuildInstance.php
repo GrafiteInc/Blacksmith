@@ -5,12 +5,14 @@ namespace Grafite\Blacksmith\Actions;
 use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Plan;
+use RuntimeException;
 
 /**
  * A new server with the given site blueprints pushed to it and deployed.
  *
  * With $dns each site's DNS is pointed at the new server before its
- * certificate is requested, so Let's Encrypt can reach it.
+ * certificate is requested, so Let's Encrypt can reach it. Each deploy is
+ * waited on, so callers only see the instance once its code is live.
  */
 class BuildInstance
 {
@@ -61,7 +63,15 @@ class BuildInstance
             if ($deploy && $siteId && $siteRole !== 'balancer') {
                 $serverId = $this->state->instance($name)['server_id'];
 
-                $plan->step("{$name} {$domain}: Deploy", fn () => $this->forge->deploySite($serverId, $siteId));
+                // Waiting keeps a new node out of the balancer, and a replacement out of cutover, until its code is live.
+                $plan->step("{$name} {$domain}: Deploy", function () use ($name, $domain, $serverId, $siteId) {
+                    try {
+                        return $this->forge->deployAndWait($serverId, $siteId);
+                    } catch (RuntimeException $exception) {
+                        throw new RuntimeException("{$name} {$domain}: {$exception->getMessage()}".PHP_EOL
+                            ."Fix it, then deploy again with: php artisan blacksmith:update-server {$name} --site={$domain} --deploy", 0, $exception);
+                    }
+                });
             }
         }
 

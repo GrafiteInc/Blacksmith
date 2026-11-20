@@ -86,7 +86,7 @@ class ProvisioningTest extends TestCase
         $forge->shouldReceive('createBackgroundProcess')->once();
         $forge->shouldReceive('obtainLetsEncryptCertificate')->once();
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('deploySite')->once()->with(800, 801);
+        $forge->shouldReceive('deployAndWait')->once()->with(800, 801);
 
         $this->artisan('blacksmith:instance', ['name' => 'staging'])
             ->expectsOutputToContain('Instance staging is live at 203.0.113.1 with: example.com')
@@ -140,7 +140,7 @@ class ProvisioningTest extends TestCase
         $forge->shouldReceive('obtainLetsEncryptCertificate')->once()->andReturnUsing(function () use ($dns) {
             $this->assertSame(['203.0.113.1'], $dns->addresses('example.com'), 'DNS moves before the certificate is requested.');
         });
-        $forge->shouldReceive('deploySite')->once()->with(800, 801);
+        $forge->shouldReceive('deployAndWait')->once()->with(800, 801);
 
         $this->artisan('blacksmith:instance', ['name' => 'staging', '--dns' => true])
             ->expectsOutputToContain('DNS example.com: Point A record 10.0.0.1 (prod) → 203.0.113.1 (staging)')
@@ -202,8 +202,9 @@ class ProvisioningTest extends TestCase
         $forge->shouldReceive('scheduledJobs')->with(1000)->andReturn([]);
         $forge->shouldReceive('backgroundProcesses')->with(1000)->andReturn([]);
         $forge->shouldReceive('redirectRules', 'securityRules')->andReturn([]);
-        $forge->shouldReceive('deploySite')->once()->with(1000, 1001);
-        $forge->shouldReceive('updateBalancingNodes')->once()->withArgs(fn ($server, $site, $nodes) => $server === 900
+        // The node only joins the balancer once its deployment is live.
+        $forge->shouldReceive('deployAndWait')->once()->ordered()->with(1000, 1001);
+        $forge->shouldReceive('updateBalancingNodes')->once()->ordered()->withArgs(fn ($server, $site, $nodes) => $server === 900
             && $site === 901
             && collect($nodes)->pluck('server_id')->all() === [100, 1000]);
         $forge->shouldNotReceive('createScheduledJob', 'createBackgroundProcess', 'obtainLetsEncryptCertificate');

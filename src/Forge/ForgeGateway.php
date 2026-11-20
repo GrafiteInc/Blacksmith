@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Forge;
 
 use Grafite\Blacksmith\Support\Defaults;
+use Grafite\Blacksmith\Support\Poll;
 use Illuminate\Support\Str;
 use Laravel\Forge\CursorPaginator;
 use Laravel\Forge\Forge;
@@ -20,6 +21,13 @@ use RuntimeException;
  */
 class ForgeGateway
 {
+    /**
+     * Deployment statuses that end a deployment without it going live.
+     */
+    public const DEPLOYMENT_FAILED = ['failed', 'failed-build', 'cancelled'];
+
+    public const DEPLOYMENT_FINISHED = 'finished';
+
     protected ?string $organization;
 
     public function __construct(protected Forge $forge, ?string $organization = null)
@@ -203,6 +211,72 @@ class ForgeGateway
     public function deploySite(int $serverId, int $siteId): Deployment
     {
         return $this->forge->createDeployment($this->organization(), $serverId, $siteId);
+    }
+
+    public function deployment(int $serverId, int $siteId, int $deploymentId): Deployment
+    {
+        return $this->forge->deployment($this->organization(), $serverId, $siteId, $deploymentId);
+    }
+
+    /**
+     * The site's most recent deployment, from the first page Forge returns.
+     */
+    public function latestDeployment(int $serverId, int $siteId): ?Deployment
+    {
+        return collect($this->forge->deployments($this->organization(), $serverId, $siteId)->items())
+            ->sortByDesc('id')
+            ->first();
+    }
+
+    public function deploymentLog(int $serverId, int $siteId, int $deploymentId): string
+    {
+        return $this->forge->deploymentLog($this->organization(), $serverId, $siteId, $deploymentId);
+    }
+
+    /**
+     * Deploy the site and wait until the deployment is live, so nothing is pointed at code that isn't there yet.
+     */
+    public function deployAndWait(int $serverId, int $siteId, ?int $timeout = null): Deployment
+    {
+        return $this->waitForDeployment($serverId, $siteId, $this->deploySite($serverId, $siteId), $timeout);
+    }
+
+    /**
+     * Poll a deployment until it finishes, a failed or timed out deployment throws with the end of its log.
+     */
+    public function waitForDeployment(int $serverId, int $siteId, Deployment $deployment, ?int $timeout = null): Deployment
+    {
+        if (! $deployment->id) {
+            throw new RuntimeException('Forge did not return the deployment, check it in Forge.');
+        }
+
+        $timeout ??= (int) config('blacksmith.deploy_timeout', 900);
+        $latest = $deployment;
+
+        $done = Poll::until(function () use ($serverId, $siteId, &$latest) {
+            $latest = $this->deployment($serverId, $siteId, $latest->id);
+
+            return $latest->status === static::DEPLOYMENT_FINISHED || in_array($latest->status, static::DEPLOYMENT_FAILED, true);
+        }, $timeout, (int) config('blacksmith.poll_interval', 15));
+
+        if ($done && $latest->status === static::DEPLOYMENT_FINISHED) {
+            return $latest;
+        }
+
+        $reason = $done ? "ended as {$latest->status}" : "was still {$latest->status} after {$timeout} seconds";
+
+        throw new RuntimeException("Deployment {$latest->id} {$reason}.".$this->logTail($serverId, $siteId, $latest->id));
+    }
+
+    protected function logTail(int $serverId, int $siteId, int $deploymentId, int $lines = 15): string
+    {
+        try {
+            $log = trim($this->deploymentLog($serverId, $siteId, $deploymentId));
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return $log === '' ? '' : PHP_EOL.implode(PHP_EOL, array_slice(explode(PHP_EOL, $log), -$lines));
     }
 
     public function enableQuickDeploy(int $serverId, int $siteId): void

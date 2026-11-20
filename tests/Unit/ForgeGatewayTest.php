@@ -173,6 +173,58 @@ class ForgeGatewayTest extends TestCase
         $this->assertSame(['POST', '/api/orgs/acme/servers/100/sites/200/deployments', null], $this->sent()[8]);
     }
 
+    public function test_deploy_and_wait_polls_until_the_deployment_finishes()
+    {
+        $gateway = $this->gateway([
+            ['data' => self::item(5, ['status' => 'queued'])],
+            ['data' => self::item(5, ['status' => 'deploying'])],
+            ['data' => self::item(5, ['status' => 'finished'])],
+        ]);
+
+        $this->assertSame('finished', $gateway->deployAndWait(100, 200)->status);
+        $this->assertSame([
+            ['POST', '/api/orgs/acme/servers/100/sites/200/deployments', null],
+            ['GET', '/api/orgs/acme/servers/100/sites/200/deployments/5', null],
+            ['GET', '/api/orgs/acme/servers/100/sites/200/deployments/5', null],
+        ], $this->sent());
+    }
+
+    public function test_a_failed_deployment_throws_with_the_end_of_its_log()
+    {
+        $gateway = $this->gateway([
+            ['data' => self::item(5, ['status' => 'queued'])],
+            ['data' => self::item(5, ['status' => 'failed-build'])],
+            ['data' => ['attributes' => ['output' => "Installing\nnpm ERR! build failed"]]],
+        ]);
+
+        try {
+            $gateway->deployAndWait(100, 200);
+            $this->fail('A failed deployment should throw.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('Deployment 5 ended as failed-build.', $exception->getMessage());
+            $this->assertStringContainsString('npm ERR! build failed', $exception->getMessage());
+        }
+
+        $this->assertSame(['GET', '/api/orgs/acme/servers/100/sites/200/deployments/5/log', null], $this->sent()[2]);
+    }
+
+    public function test_a_deployment_that_never_finishes_times_out()
+    {
+        config(['blacksmith.deploy_timeout' => 2]);
+
+        $gateway = $this->gateway([
+            ['data' => self::item(5, ['status' => 'queued'])],
+            ['data' => self::item(5, ['status' => 'deploying'])],
+            ['data' => self::item(5, ['status' => 'deploying'])],
+            ['data' => ['attributes' => ['output' => '']]],
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Deployment 5 was still deploying after 2 seconds.');
+
+        $gateway->deployAndWait(100, 200);
+    }
+
     public function test_site_root_and_repository_helpers()
     {
         $site = new Site(['name' => 'example.com', 'user' => 'forge', 'repository' => ['provider' => 'github', 'url' => 'git@github.com:acme/example.git', 'branch' => 'main']]);

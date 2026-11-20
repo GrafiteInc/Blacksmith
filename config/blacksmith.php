@@ -65,6 +65,10 @@ return [
     */
     'poll_interval' => 15,
     'provision_timeout' => 1800,
+    // How long to wait for a deployment before a node is balanced or a cutover goes ahead
+    'deploy_timeout' => 900,
+    // How long cutover waits for the new server's certificate
+    'certificate_timeout' => 300,
 
     /*
     |--------------------------------------------------------------------------
@@ -147,6 +151,10 @@ return [
             'php_version' => 'php85',
             'lets_encrypt' => true,
             'quick_deploy' => false,
+            // Forge zero-downtime deployments (releases with a current symlink). Forge can only
+            // set this when a site is created. null follows the deploy script: a script using
+            // $CREATE_RELEASE() / $ACTIVATE_RELEASE() means true.
+            'zero_downtime' => null,
             'scheduler' => false,
         ],
 
