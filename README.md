@@ -113,7 +113,7 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 |---|---|
 | `blacksmith:localize` | Pull a Forge server (and its sites, workers, env, deploy script) into blueprints. Run it again any time to refresh. |
 | `blacksmith:make-server {instance}` | Create a DigitalOcean droplet (or use `--ip`), connect it to Forge as a custom server, run the provision script over SSH and wait until it's ready. |
-| `blacksmith:update-server {instance?}` | Push the blueprints to Forge. A site that's missing from the server gets created. Use `--dry-run` to see the changes first, `--only=env,workers` to limit what's pushed, and `--deploy` to deploy afterwards. |
+| `blacksmith:update-server {instance?}` | Push the blueprints to Forge. A site that's missing from the server gets created. Use `--dry-run` to see the changes first, `--only=env,workers` to limit what's pushed, and `--deploy` to deploy afterwards. Add `--rolling` to deploy load balanced sites one node at a time. |
 | `blacksmith:workers {up\|down\|restart\|status}` | Manage queue workers. `up` makes them match the blueprint and never duplicates them. |
 | `blacksmith:backup` | Zip `.blacksmith` and upload it to your backup storage. |
 | `blacksmith:instance {name}` | Create a new server with copies of your sites and deploy them, in one step. |
@@ -163,7 +163,39 @@ With a DNS provider, skip "point DNS at the new IP": `--cutover` moves the recor
 
 At cutover the new server takes over the name `prod`, so `.env.prod` overrides, pools and every other command keep working. If the instance sits behind a load balancer, DNS doesn't change: cutover points the balancer at the new server. Run `--abort` before cutover to delete the new server and start over.
 
+Cutover only goes ahead once every site on the new server has a finished deployment. A first deploy that fails during `replace` tells you how to retry it.
+
+With Let's Encrypt's http-01 check, HTTPS on the new server fails from the moment DNS moves until the certificate is issued, which is usually under a minute. Cutover waits for the certificate and tells you once it's active. To avoid the gap altogether, see [Zero-downtime deployments](#zero-downtime-deployments).
+
+When Blacksmith moves DNS records that aren't proxied, resolvers can keep sending visitors to the old server for up to the record's TTL. The old server keeps serving them in the meantime. Cutover doesn't offer to delete it, and `--finish` refuses until the TTL has passed (`--force` overrides).
+
 Blacksmith copies what's in the blueprints. It does **not** copy databases, files in `storage/`, background processes other than queue workers, firewall rules, server SSH keys or cron jobs other than the scheduler, so move those yourself before cutover. `replace` warns you when the env points at a local database or disk.
+
+### Zero-downtime deployments
+
+Forge can deploy a site into a new release directory and switch a `current` symlink once the release is ready, so a deploy never serves half-updated code. Blacksmith follows the setting through `"zero_downtime"` in `site.json`:
+
+- `localize` saves it from Forge.
+- New sites are created with it on or off as the blueprint says. Forge only sets it when a site is created, and turns it on if it isn't sent, so Blacksmith always sends it.
+- Without `"zero_downtime"`, the blueprint follows its `deploy.sh`. A script using Forge's `$CREATE_RELEASE()` / `$ACTIVATE_RELEASE()` means on. `update-server` warns when the script and the setting disagree.
+- The scheduler runs `{site}/current/artisan schedule:run` and workers run in `{site}/current`. A scheduler left in the wrong directory is moved.
+
+**Moving an existing site to zero-downtime deployments:** Forge can't switch an existing site, so move it to a new server built the new way:
+
+```
+# set "zero_downtime": true in .blacksmith/sites/example.com/site.json
+# and use Forge's zero-downtime deploy script in deploy.sh
+php artisan blacksmith:replace prod
+php artisan blacksmith:replace prod --cutover
+```
+
+The same works with `blacksmith:instance` and `blacksmith:scale` for new servers.
+
+**No HTTPS gap when moving servers:** set `defaults.certificate.verification_method` to `dns-01` and `replace` requests the new server's certificate while it builds, so it's ready before DNS moves. Forge verifies dns-01 through a CNAME, so add the one Forge asks for if this is the first dns-01 certificate for the domain. Proxied Cloudflare records with SSL mode **Full** also avoid the gap.
+
+**Load balanced sites:** `blacksmith:update-server lb --deploy --rolling` deploys one node at a time. Each node is marked down on the balancer, deployed, and waited on before the next one goes, and the primary goes last. If a node's deployment fails, it stays out of the balancer while the other nodes keep serving. New nodes from `blacksmith:scale` only join the balancer once their first deployment has finished.
+
+How long Blacksmith waits is set by `deploy_timeout` (default 900 seconds) and `certificate_timeout` (default 300 seconds) in `config/blacksmith.php`.
 
 ### Queue workers
 
