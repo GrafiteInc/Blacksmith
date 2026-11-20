@@ -98,6 +98,8 @@ class Scale extends BlacksmithCommand
             $balancer->handle($domain, $plan);
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);
+        } finally {
+            $this->printAccessReport();
         }
 
         $this->info("{$domain} is balanced across: ".implode(', ', $this->state()->pool($domain)['nodes']));

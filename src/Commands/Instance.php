@@ -68,6 +68,8 @@ class Instance extends BlacksmithCommand
             );
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);
+        } finally {
+            $this->printAccessReport();
         }
 
         $instance = $this->state()->instance($name);

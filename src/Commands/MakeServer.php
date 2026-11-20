@@ -44,6 +44,8 @@ class MakeServer extends BlacksmithCommand
             $server->handle($instance, $this->plan());
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);
+        } finally {
+            $this->printAccessReport();
         }
 
         $this->info("Instance {$instance} is ready, add sites with: php artisan blacksmith:update-server {$instance} --site=example.com");

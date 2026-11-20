@@ -69,7 +69,11 @@ class Replace extends BlacksmithCommand
 
         $this->ensureProfile($profile);
 
-        $name = $replace->build($instance, $profile, $this->plan(), $this->option('ip'), $this->option('private-ip'), ! $this->option('no-deploy'));
+        try {
+            $name = $replace->build($instance, $profile, $this->plan(), $this->option('ip'), $this->option('private-ip'), ! $this->option('no-deploy'));
+        } finally {
+            $this->printAccessReport();
+        }
 
         $ip = $this->state()->instance($name)['ip_address'];
         $sites = $this->state()->sitesFor($instance);
