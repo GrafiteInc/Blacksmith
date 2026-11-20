@@ -6,6 +6,7 @@ use Closure;
 use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\Poll;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Laravel\Forge\CursorPaginator;
 use Laravel\Forge\Exceptions\FailedActionException;
@@ -35,6 +36,11 @@ class ForgeGateway
     public const DEPLOYMENT_FAILED = ['failed', 'failed-build', 'cancelled'];
 
     public const DEPLOYMENT_FINISHED = 'finished';
+
+    /**
+     * Roughly how long Forge turns away a new site's env and deploy script, in seconds.
+     */
+    public const NEW_SITE_WAIT = 120;
 
     protected ?string $organization;
 
@@ -232,7 +238,7 @@ class ForgeGateway
 
     public function updateSiteEnvironmentFile(int $serverId, int $siteId, string $contents): void
     {
-        $this->send("the env of site {$siteId}", fn () => $this->forge->updateSiteEnvironment($this->organization(), $serverId, $siteId, $contents));
+        $this->sendToNewSite("the env of site {$siteId}", fn () => $this->forge->updateSiteEnvironment($this->organization(), $serverId, $siteId, $contents));
     }
 
     public function siteDeploymentScript(int $serverId, int $siteId): string
@@ -242,7 +248,7 @@ class ForgeGateway
 
     public function updateSiteDeploymentScript(int $serverId, int $siteId, string $contents): void
     {
-        $this->send("the deploy script of site {$siteId}", fn () => $this->forge->updateDeploymentScript($this->organization(), $serverId, $siteId, ['content' => $contents]));
+        $this->sendToNewSite("the deploy script of site {$siteId}", fn () => $this->forge->updateDeploymentScript($this->organization(), $serverId, $siteId, ['content' => $contents]));
     }
 
     public function deploySite(int $serverId, int $siteId): Deployment
@@ -554,6 +560,35 @@ class ForgeGateway
 
             throw new RuntimeException("Forge rejected {$action}: ".(is_array($body) ? static::reasons($body) : $exception->getMessage()), 400, $exception);
         }
+    }
+
+    /**
+     * Run a write to a site's files, waiting out Forge's refusal while a site it just created is still installing.
+     *
+     * Forge answers "If the site was recently created, please wait at least 60 seconds" for about a minute
+     * after creating a site, every other rejection is thrown straight away.
+     */
+    protected function sendToNewSite(string $action, Closure $call): mixed
+    {
+        $interval = max(1, (int) config('blacksmith.poll_interval', 15));
+        $attempts = (int) ceil(static::NEW_SITE_WAIT / $interval) + 1;
+
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                return $this->send($action, $call);
+            } catch (RuntimeException $exception) {
+                if ($attempt >= $attempts || ! static::siteStillInstalling($exception)) {
+                    throw $exception;
+                }
+
+                Sleep::for($interval)->seconds();
+            }
+        }
+    }
+
+    protected static function siteStillInstalling(RuntimeException $exception): bool
+    {
+        return Str::contains($exception->getMessage(), ['recently created', 'wait at least'], true);
     }
 
     /**

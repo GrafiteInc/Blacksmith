@@ -8,6 +8,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Sleep;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Site;
 use RuntimeException;
@@ -167,6 +168,50 @@ class ForgeGatewayTest extends TestCase
             'Forge rejected installing php85 on server 700: The server is still provisioning.',
             $rejected(fn () => $gateway->installPHP(700, 'php85')),
         );
+    }
+
+    public function test_a_new_sites_env_and_deploy_script_wait_until_forge_accepts_them()
+    {
+        $installing = fn () => new Response(400, [], json_encode(['message' => 'The .env file could not be updated. If the site was recently created, please wait at least 60 seconds and try again.']));
+
+        $gateway = $this->gateway([$installing(), $installing(), null, $installing(), null]);
+
+        $gateway->updateSiteEnvironmentFile(100, 200, 'APP_ENV=production');
+        $gateway->updateSiteDeploymentScript(100, 200, 'git pull');
+
+        $this->assertCount(5, $this->sent());
+        $env = ['PUT', '/api/orgs/acme/servers/100/sites/200/environment', ['environment' => 'APP_ENV=production']];
+        $this->assertSame([$env, $env, $env], array_slice($this->sent(), 0, 3));
+        $this->assertSame(['PUT', '/api/orgs/acme/servers/100/sites/200/deployments/script', ['content' => 'git pull']], $this->sent()[4]);
+        Sleep::assertSleptTimes(3);
+    }
+
+    public function test_a_new_site_is_not_waited_on_forever_and_other_rejections_are_not_retried()
+    {
+        config(['blacksmith.poll_interval' => 60]);
+        $installing = fn () => new Response(400, [], json_encode(['message' => 'If the site was recently created, please wait at least 60 seconds and try again.']));
+
+        $gateway = $this->gateway([$installing(), $installing(), $installing()]);
+
+        try {
+            $gateway->updateSiteEnvironmentFile(100, 200, 'APP_ENV=production');
+            $this->fail('Forge kept refusing, so the update should have failed.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringStartsWith('Forge rejected the env of site 200: If the site was recently created', $exception->getMessage());
+        }
+
+        $this->assertCount(3, $this->sent(), 'Gives up after NEW_SITE_WAIT seconds of retries.');
+
+        $gateway = $this->gateway([new Response(400, [], json_encode(['message' => 'The site is locked.']))]);
+
+        try {
+            $gateway->updateSiteEnvironmentFile(100, 200, 'APP_ENV=production');
+            $this->fail('A different rejection should be thrown.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Forge rejected the env of site 200: The site is locked.', $exception->getMessage());
+        }
+
+        $this->assertCount(1, $this->sent());
     }
 
     public function test_aliases_are_synced_as_domain_records()
