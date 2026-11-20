@@ -91,6 +91,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | DNS
+    |--------------------------------------------------------------------------
+    |
+    | Leave the provider empty to point DNS yourself. With cloudflare,
+    | replace --cutover, balancer, instance --dns and blacksmith:dns
+    | move a site's domain and aliases to the right server. The token
+    | needs Zone:Read and DNS:Edit. A site can opt out with "dns": false
+    | in its site.json.
+    |
+    */
+    'dns' => [
+        // null or cloudflare
+        'provider' => env('BLACKSMITH_DNS_PROVIDER'),
+
+        'cloudflare' => [
+            'token' => env('BLACKSMITH_CLOUDFLARE_TOKEN'),
+            // Only used for records Blacksmith creates, existing records keep their setting
+            'proxied' => env('BLACKSMITH_CLOUDFLARE_PROXIED', true),
+            // Optional domain => zone ID, skips looking the zone up
+            'zones' => [],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Defaults
     |--------------------------------------------------------------------------
     |
@@ -137,7 +162,7 @@ return [
         'worker' => [
             'connection' => 'database',
             'queue' => 'default',
-            'timeout' => 60,
+            'timeout' => 0,
             'sleep' => 10,
             'tries' => null,
             'processes' => 1,

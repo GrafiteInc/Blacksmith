@@ -18,6 +18,9 @@ use RuntimeException;
  *   },
  *   "pools": {
  *     "example.com": {"balancer": "lb", "primary": "prod", "nodes": ["prod", "example-com-node-1"], "method": "round_robin"}
+ *   },
+ *   "dns": {
+ *     "example.com": {"zone_id": "023e105f4ecef8ad9ca31a8372d0c353"}  # saved by blacksmith:localize
  *   }
  * }
  *
@@ -37,7 +40,7 @@ class StateRepository
     {
         $state = file_exists($this->path) ? json_decode(file_get_contents($this->path), true) : null;
 
-        $this->state = array_replace(['instances' => [], 'pools' => []], is_array($state) ? $state : []);
+        $this->state = array_replace(['instances' => [], 'pools' => [], 'dns' => []], is_array($state) ? $state : []);
     }
 
     public function exists(): bool
@@ -273,6 +276,28 @@ class StateRepository
         $this->save();
     }
 
+    public function isPooled(string $instance, string $domain): bool
+    {
+        $pool = $this->pool($domain);
+
+        return $pool && in_array($instance, $pool['nodes'], true);
+    }
+
+    /**
+     * The sites whose DNS points straight at the instance, rather than at a load balancer in front of it.
+     */
+    public function publicSitesFor(string $instance): array
+    {
+        return collect($this->sitesFor($instance))
+            ->filter(fn ($domain) => match ($this->roleFor($instance, $domain)) {
+                'balancer' => true,
+                'primary' => ! $this->isPooled($instance, $domain),
+                default => false,
+            })
+            ->values()
+            ->toArray();
+    }
+
     public function nextNodeName(string $domain): string
     {
         $prefix = Str::slug(str_replace('.', '-', $domain)).'-node-';
@@ -283,6 +308,52 @@ class StateRepository
         }
 
         return $prefix.$number;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DNS
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * domain => zone ID for every site whose DNS zone has been found.
+     */
+    public function dnsZones(): array
+    {
+        return collect($this->state['dns'])
+            ->map(fn ($record) => $record['zone_id'] ?? null)
+            ->filter()
+            ->toArray();
+    }
+
+    public function dnsZone(string $domain): ?string
+    {
+        return $this->state['dns'][$domain]['zone_id'] ?? null;
+    }
+
+    public function putDnsZone(string $domain, string $zoneId): void
+    {
+        $this->state['dns'][$domain] = array_replace($this->state['dns'][$domain] ?? [], ['zone_id' => $zoneId]);
+        $this->save();
+    }
+
+    /**
+     * The addresses of every instance, the only ones Blacksmith moves DNS away from without --force.
+     */
+    public function knownIps(): array
+    {
+        return collect($this->state['instances'])
+            ->flatMap(fn ($instance) => [$instance['ip_address'] ?? null])
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+    }
+
+    public function instanceForIp(string $ip): ?string
+    {
+        return $this->findInstance(fn ($record) => ($record['ip_address'] ?? null) === $ip);
     }
 
     public function save(): void
