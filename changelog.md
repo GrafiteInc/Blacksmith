@@ -3,6 +3,23 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 ----
 
+## [v2.1.1] - 2026-11-20
+
+### Docs
+- document zero-downtime, rolling, and replace cutover
+
+### Feat(replace)
+- wait for deploys and certificates and drain DNS
+
+### Feat(update-server)
+- add rolling deployments for load balanced sites
+
+### Feat(blueprints)
+- support Forge zero-downtime deployments
+
+### Feat(deploy)
+- wait for deployments and add deployment settings
+
 ## [v2.1.0] - 2026-11-20
 
 ### Docs(dns)
