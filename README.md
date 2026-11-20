@@ -47,6 +47,10 @@ BLACKSMITH_FORGE_TOKEN=
 BLACKSMITH_FORGE_ORGANIZATION=      # optional when the token only has one organization
 BLACKSMITH_SERVER_PROVIDER_TOKEN=   # DigitalOcean, for creating servers
 BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # must be one of your DigitalOcean SSH keys
+
+# optional, lets Blacksmith move DNS for you
+BLACKSMITH_DNS_PROVIDER=cloudflare
+BLACKSMITH_CLOUDFLARE_TOKEN=
 ```
 
 ### Forge API token
@@ -66,6 +70,22 @@ Blacksmith uses the Forge API v2, where everything belongs to an organization. C
 | `site:manage-project` | Load balancing |
 
 `BLACKSMITH_FORGE_ORGANIZATION` is the slug in your Forge URLs. If the token can reach several organizations, Blacksmith asks you to set it.
+
+### Cloudflare DNS
+
+If your DNS is on Cloudflare, Blacksmith can point it at the right server for you. Create an API token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone → Zone → Read** and **Zone → DNS → Edit** for your zones. Then set `BLACKSMITH_DNS_PROVIDER=cloudflare` and `BLACKSMITH_CLOUDFLARE_TOKEN`.
+
+DNS changes cover a site's domain and its aliases, and Blacksmith is cautious with them:
+
+- An A record moves only when it points at a server Blacksmith knows (any instance in `state.json`). A record pointing anywhere else, such as a CDN or another host, is skipped with a warning. `blacksmith:dns --force` moves it anyway.
+- A missing record is created. New records are proxied unless `BLACKSMITH_CLOUDFLARE_PROXIED=false`. An existing record keeps its proxy and TTL settings.
+- A CNAME to one of your sites (for example `www` → `example.com`) already follows that record and is left alone. A CNAME to anything else is never touched.
+- Hostnames with several A records, and AAAA records, are reported for you to handle in Cloudflare.
+- A site whose DNS lives elsewhere can opt out with `"dns": false` in its `site.json`.
+
+`blacksmith:localize` finds each site's zone, saves it to `state.json` and reports where every record points. Problems there are warnings, so they don't stop a localize.
+
+> **SSL mode:** with proxied records and Cloudflare's SSL mode set to **Full (strict)**, visitors get a 526 error until the new server has its certificate. It can also stop Let's Encrypt's http-01 check from reaching the server. Use **Full** while you move servers, or set `defaults.certificate.verification_method` to `dns-01`.
 
 ### Defaults
 
@@ -100,6 +120,7 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 | `blacksmith:balancer {name} --site=` | Put a load balancer in front of a site. |
 | `blacksmith:scale {site} --to=N` | Add or remove web nodes behind the site's load balancer. `--remove=node` drains a node and then deletes it. |
 | `blacksmith:replace {instance}` | Move an instance to a fresh server, for example for a new Ubuntu version. Then `--cutover` to swap it in, `--finish` to delete the old server, or `--abort` to throw the new one away. |
+| `blacksmith:dns {instance}` | Point the DNS of the instance's sites at its server (needs a [DNS provider](#cloudflare-dns)). `--site=` limits it, `--force` also moves records Blacksmith doesn't manage. |
 
 ### Copy a site to a new server
 
@@ -107,6 +128,8 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 php artisan blacksmith:localize --server=123456
 php artisan blacksmith:instance staging --site=example.com
 ```
+
+Add `--dns` to point the site's DNS at the new server before its certificate is requested.
 
 To change the env for that instance only (for example `APP_URL`), put the keys in `.blacksmith/sites/example.com/.env.staging` and run `blacksmith:update-server staging --only=env`.
 
@@ -118,6 +141,8 @@ php artisan blacksmith:balancer lb --site=example.com
 php artisan blacksmith:update-server lb --only=ssl
 php artisan blacksmith:scale example.com --to=3
 ```
+
+With a DNS provider, `blacksmith:balancer` points the DNS at the balancer and gets the certificate itself, so you can go straight to `scale`. Pass `--no-dns` to keep doing that step yourself.
 
 The server already running the site becomes the **primary** node. It is the only node that runs the scheduler and queue workers. New nodes are web-only: they get the same env and deploy script, but no scheduler, workers or certificate, because the balancer terminates SSL. Before scaling, make sure sessions, cache, the database and uploads are shared between servers (`scale` warns you about `file`/`sqlite`/`localhost` settings).
 
@@ -133,6 +158,8 @@ php artisan blacksmith:replace prod              # builds prod-next and deploys 
 php artisan blacksmith:replace prod --cutover    # stops the scheduler and workers on the old server and turns them on, with SSL, on the new one
 php artisan blacksmith:replace prod --finish     # deletes the old server (kept as prod-old) once you're happy
 ```
+
+With a DNS provider, skip "point DNS at the new IP": `--cutover` moves the records after the old server stops its scheduler and workers, and before the new server asks for its certificate. Pass `--no-dns` to move DNS yourself. If Cloudflare fails, cutover still turns on the scheduler and workers and tells you how to finish (`blacksmith:dns prod`, then `blacksmith:update-server prod --only=ssl`).
 
 At cutover the new server takes over the name `prod`, so `.env.prod` overrides, pools and every other command keep working. If the instance sits behind a load balancer, DNS doesn't change: cutover points the balancer at the new server. Run `--abort` before cutover to delete the new server and start over.
 
