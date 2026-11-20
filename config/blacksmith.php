@@ -235,6 +235,8 @@ return [
         'certificate' => [
             // http-01 or dns-01
             'verification_method' => 'http-01',
+            // ecdsa or rsa
+            'key_type' => 'ecdsa',
         ],
     ],
 ];

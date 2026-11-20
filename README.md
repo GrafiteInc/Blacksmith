@@ -97,6 +97,8 @@ DNS changes cover a site's domain and its aliases, and Blacksmith is cautious wi
 
 Every default Blacksmith uses lives under `defaults` in `config/blacksmith.php`. That includes server profiles (Ubuntu, PHP, upload limits, OPcache), site blueprints (site type, web directory, PHP), repositories, queue workers, the scheduler, load balancing, alias domains, certificates and the Forge user. New profiles and blueprints start from these values. What's already saved in `.blacksmith` is kept. Keys missing from a published config fall back to the package's values, so new defaults reach you on upgrade.
 
+Let's Encrypt certificates use `defaults.certificate.verification_method` (`http-01` or `dns-01`) and `defaults.certificate.key_type` (`ecdsa` or `rsa`, which Forge requires).
+
 ## How it works
 
 Blacksmith works like a small Terraform for Forge. `localize` copies a Forge server's configuration into **blueprints**: plain files you can read, edit and back up. Then the other commands push those blueprints back to Forge, to the same server or to brand new ones.

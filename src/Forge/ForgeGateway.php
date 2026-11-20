@@ -348,7 +348,10 @@ class ForgeGateway
         foreach ($records as $record) {
             $this->send("a certificate for {$record->name}", fn () => $this->forge->createCertificate($organization, $serverId, $siteId, $record->id, [
                 'type' => 'letsencrypt',
-                'letsencrypt' => ['verification_method' => Defaults::get('certificate.verification_method', 'http-01')],
+                'letsencrypt' => [
+                    'verification_method' => Defaults::get('certificate.verification_method', 'http-01'),
+                    'key_type' => Defaults::get('certificate.key_type', 'ecdsa'),
+                ],
             ]));
         }
     }

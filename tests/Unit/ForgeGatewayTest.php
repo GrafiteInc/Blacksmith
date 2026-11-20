@@ -245,7 +245,7 @@ class ForgeGatewayTest extends TestCase
 
         $gateway->obtainLetsEncryptCertificate(100, 200, ['example.com', 'www.example.com']);
 
-        $body = ['type' => 'letsencrypt', 'letsencrypt' => ['verification_method' => 'http-01']];
+        $body = ['type' => 'letsencrypt', 'letsencrypt' => ['verification_method' => 'http-01', 'key_type' => 'ecdsa']];
 
         $this->assertSame([
             ['GET', '/api/orgs/acme/servers/100/sites/200/domains', null],
