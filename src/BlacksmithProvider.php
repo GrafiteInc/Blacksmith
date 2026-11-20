@@ -74,6 +74,7 @@ class BlacksmithProvider extends ServiceProvider
             config('blacksmith.ssh.user', 'root'),
             config('blacksmith.ssh.key'),
             (int) config('blacksmith.poll_interval', 15),
+            (int) config('blacksmith.ssh.port', 22),
         ));
 
         $this->app->bind(ServerProvider::class, fn () => match (config('blacksmith.server_provider')) {

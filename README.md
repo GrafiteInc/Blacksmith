@@ -47,6 +47,7 @@ BLACKSMITH_FORGE_TOKEN=
 BLACKSMITH_FORGE_ORGANIZATION=      # optional when the token only has one organization
 BLACKSMITH_SERVER_PROVIDER_TOKEN=   # DigitalOcean, for creating servers
 BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # must be one of your DigitalOcean SSH keys
+BLACKSMITH_SSH_PORT=22              # optional, the port Blacksmith and Forge SSH into new servers on
 
 # optional, lets Blacksmith move DNS for you
 BLACKSMITH_DNS_PROVIDER=cloudflare

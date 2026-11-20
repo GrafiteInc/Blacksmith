@@ -85,15 +85,18 @@ class ForgeGateway
 
     /**
      * Connect an existing box as a custom server, the provision command still has to run on it.
+     *
+     * Forge requires the SSH port, it defaults to blacksmith.ssh.port.
      */
     public function createCustomServer(array $payload): Server
     {
         $payload['custom'] = array_filter([
             'ip_address' => $payload['ip_address'] ?? null,
             'private_ip_address' => $payload['private_ip_address'] ?? null,
+            'ssh_port' => (int) ($payload['ssh_port'] ?? config('blacksmith.ssh.port', 22)),
         ]);
 
-        unset($payload['ip_address'], $payload['private_ip_address']);
+        unset($payload['ip_address'], $payload['private_ip_address'], $payload['ssh_port']);
 
         return $this->send("creating server {$payload['name']}", fn () => $this->forge->createServer($this->organization(), $payload, false));
     }

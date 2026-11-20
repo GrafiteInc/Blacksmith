@@ -56,6 +56,8 @@ return [
     'ssh' => [
         'user' => env('BLACKSMITH_SSH_USER', 'root'),
         'key' => env('BLACKSMITH_SSH_KEY'),
+        // Forge connects on this port too, it's sent as the custom server's ssh_port.
+        'port' => (int) env('BLACKSMITH_SSH_PORT', 22),
     ],
 
     /*

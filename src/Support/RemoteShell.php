@@ -12,6 +12,7 @@ class RemoteShell
         protected string $user = 'root',
         protected ?string $key = null,
         protected int $interval = 15,
+        protected int $port = 22,
     ) {}
 
     public function run(string $ip, string $command, int $timeout = 1800): ProcessResult
@@ -35,6 +36,7 @@ class RemoteShell
     {
         return array_merge(
             ['ssh', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10'],
+            $this->port !== 22 ? ['-p', (string) $this->port] : [],
             $this->key ? ['-i', $this->key] : [],
             ["{$this->user}@{$ip}", $command],
         );

@@ -103,8 +103,15 @@ class ForgeGatewayTest extends TestCase
         $this->assertSame([['POST', '/api/orgs/acme/servers', [
             'provider' => 'custom',
             'name' => 'box',
-            'custom' => ['ip_address' => '1.2.3.4'],
+            'custom' => ['ip_address' => '1.2.3.4', 'ssh_port' => 22],
         ]]], $this->sent());
+
+        config(['blacksmith.ssh.port' => 2222]);
+        $gateway = $this->gateway([['data' => self::item(701, ['name' => 'box'])]]);
+
+        $gateway->createCustomServer(['provider' => 'custom', 'name' => 'box', 'ip_address' => '1.2.3.4', 'private_ip_address' => '10.0.0.2']);
+
+        $this->assertSame(['ip_address' => '1.2.3.4', 'private_ip_address' => '10.0.0.2', 'ssh_port' => 2222], $this->sent()[0][2]['custom'], 'The configured SSH port is sent to Forge.');
     }
 
     public function test_forge_rejections_name_the_fields_forge_gave()
