@@ -6,11 +6,11 @@ class Php
 {
     /**
      * Forge's name for a version (php84), from that name, the 8.4 its PHP versions list
-     * returns, or the php8.4 binary. Anything else is returned unchanged.
+     * returns, the "PHP 8.4" label sites return, or the php8.4 binary. Anything else is returned unchanged.
      */
     public static function name(?string $version): ?string
     {
-        if (preg_match('/^(?:php)?(\d)\.?(\d+)$/', (string) $version, $matches)) {
+        if (preg_match('/^(?:php)?\s*(\d)\.?(\d+)$/i', trim((string) $version), $matches)) {
             return "php{$matches[1]}{$matches[2]}";
         }
 

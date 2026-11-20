@@ -7,6 +7,7 @@ use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\EnvFile;
+use Grafite\Blacksmith\Support\Php;
 use Grafite\Blacksmith\Support\ReportsProgress;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -124,9 +125,9 @@ class PullFromForge
         $this->blueprints->saveSite($domain, array_replace($existing, [
             'domain' => $domain,
             'aliases' => $aliases,
-            'directory' => $site->webDirectory ?: $existing['directory'],
-            'project_type' => $site->appType ?: $existing['project_type'],
-            'php_version' => $site->phpVersion ?: ($existing['php_version'] ?? null),
+            'directory' => SyncSite::webDirectory($site->webDirectory, $domain, $site->rootDirectory) ?: $existing['directory'],
+            'project_type' => $site->appType ? SyncSite::siteType($site->appType) : $existing['project_type'],
+            'php_version' => Php::name($site->phpVersion) ?: ($existing['php_version'] ?? null),
             'repository' => $repository ? SyncSite::repository(array_filter([
                 'provider' => $repository['provider'],
                 'repository' => $repository['repository'],

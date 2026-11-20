@@ -171,15 +171,19 @@ class SyncSite
                 .($zeroDowntime ? 'does' : 'does not').". Forge only sets this when a site is created, run blacksmith:replace {$this->state->blueprintName($instance)} to move it to a new server.");
         }
 
-        if ($site->webDirectory && $site->webDirectory !== $blueprint['directory']) {
-            $plan->step($label."Change web directory to {$blueprint['directory']}", fn () => $this->forge->updateSite($serverId, $site->id, [
-                'directory' => $blueprint['directory'],
+        $directory = static::webDirectory($blueprint['directory'], $domain);
+
+        if ($site->webDirectory && $directory && static::webDirectory($site->webDirectory, $domain, $site->rootDirectory) !== $directory) {
+            $plan->step($label."Change web directory to {$directory}", fn () => $this->forge->updateSite($serverId, $site->id, [
+                'directory' => $directory,
             ]));
         }
 
-        if ($site->phpVersion && $site->phpVersion !== $blueprint['php_version']) {
-            $plan->step($label."Change PHP to {$blueprint['php_version']}", fn () => $this->forge->updateSite($serverId, $site->id, [
-                'php_version' => $blueprint['php_version'],
+        $php = Php::name($blueprint['php_version']);
+
+        if ($site->phpVersion && $php && Php::name($site->phpVersion) !== $php) {
+            $plan->step($label."Change PHP to {$php}", fn () => $this->forge->updateSite($serverId, $site->id, [
+                'php_version' => $php,
             ]));
         }
     }
@@ -192,10 +196,14 @@ class SyncSite
     {
         $payload = [
             'name' => $blueprint['domain'],
+            // The site's own domain, not a Forge provided on-forge.com subdomain.
+            'domain_mode' => 'custom',
+            'www_redirect_type' => Defaults::get('domain.www_redirect_type', 'none'),
+            'allow_wildcard_subdomains' => (bool) Defaults::get('domain.allow_wildcard_subdomains', false),
             'type' => static::siteType($blueprint['project_type'] ?? null),
-            'web_directory' => $blueprint['directory'],
+            'web_directory' => static::webDirectory($blueprint['directory'], $blueprint['domain']),
             'is_isolated' => false,
-            'php_version' => $blueprint['php_version'],
+            'php_version' => Php::name($blueprint['php_version']),
             'zero_downtime_deployments' => $zeroDowntime ?? (bool) ($blueprint['zero_downtime'] ?? false),
         ];
 
@@ -215,14 +223,47 @@ class SyncSite
 
     /**
      * v1 project types were php and html, v2 has a type per framework. Sites are Laravel apps unless the blueprint says otherwise.
+     * Forge returns labels (Custom, Static HTML, Next.js) but is sent slugs (custom, static-html, nextjs).
      */
     public static function siteType(?string $type): string
     {
-        return match ($type) {
-            null, '' => Defaults::get('site.project_type', 'laravel'),
+        return match ($type = Str::slug((string) $type)) {
+            '' => Defaults::get('site.project_type', 'laravel'),
             'html' => 'static-html',
             default => $type,
         };
+    }
+
+    /**
+     * The web directory relative to the site, as Forge is sent it (/public). Forge returns it as
+     * a full path (/home/forge/example.com/public), under the current release with zero-downtime.
+     */
+    public static function webDirectory(?string $directory, string $domain, ?string $root = null): ?string
+    {
+        if (! $directory) {
+            return $directory;
+        }
+
+        $prefixes = array_filter([
+            $root ? preg_quote(rtrim($root, '/'), '#') : null,
+            '/home/[^/]+/'.preg_quote($domain, '#'),
+        ]);
+
+        foreach ($prefixes as $prefix) {
+            if (preg_match("#^{$prefix}(?:/current)?(/.*)?$#", rtrim($directory, '/'), $matches)) {
+                return ($matches[1] ?? '') ?: '/';
+            }
+        }
+
+        return $directory;
+    }
+
+    /**
+     * Forge returns the provider's name (GitHub), it's sent as github.
+     */
+    public static function sourceControlProvider(?string $provider): ?string
+    {
+        return $provider ? Str::slug($provider) : $provider;
     }
 
     /**
@@ -230,7 +271,10 @@ class SyncSite
      */
     public static function repository(array $repository): array
     {
-        return array_replace(['provider' => 'github', 'repository' => null, 'branch' => 'main', 'composer' => true], Defaults::section('repository'), $repository);
+        $repository = array_replace(['provider' => 'github', 'repository' => null, 'branch' => 'main', 'composer' => true], Defaults::section('repository'), $repository);
+        $repository['provider'] = static::sourceControlProvider($repository['provider']);
+
+        return $repository;
     }
 
     protected function syncRepository(int $serverId, ?Site $site, bool $created, array $repository, Plan $plan, string $label): void

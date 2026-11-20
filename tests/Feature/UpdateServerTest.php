@@ -186,6 +186,9 @@ class UpdateServerTest extends TestCase
         $forge->shouldReceive('deleteSite')->once()->with(100, 1);
         $forge->shouldReceive('createSite')->once()->with(100, [
             'name' => 'example.com',
+            'domain_mode' => 'custom',
+            'www_redirect_type' => 'none',
+            'allow_wildcard_subdomains' => false,
             'type' => 'laravel',
             'web_directory' => '/public',
             'is_isolated' => false,
