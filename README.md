@@ -45,8 +45,8 @@ Then set these in your `.env`:
 ```
 BLACKSMITH_FORGE_TOKEN=
 BLACKSMITH_FORGE_ORGANIZATION=      # optional when the token only has one organization
-BLACKSMITH_SERVER_PROVIDER_TOKEN=   # DigitalOcean, for creating servers
-BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # must be one of your DigitalOcean SSH keys
+BLACKSMITH_FORGE_CREDENTIAL=        # optional when the organization has one DigitalOcean credential
+BLACKSMITH_SSH_KEY=~/.ssh/id_ed25519 # optional, for connecting existing servers with --ip
 BLACKSMITH_SSH_PORT=22              # optional, the port Blacksmith and Forge SSH into new servers on
 
 # optional, lets Blacksmith move DNS for you
@@ -62,6 +62,7 @@ Blacksmith uses the Forge API v2, where everything belongs to an organization. C
 |-------|----------|
 | `organization:view` | Finding your organization when `BLACKSMITH_FORGE_ORGANIZATION` is empty |
 | `server:view`, `server:create`, `server:delete` | Reading, creating and deleting servers |
+| `credential:view` | Finding your DigitalOcean server credential and its VPC when creating servers |
 | `server:manage-php` | PHP versions, OPcache, upload size and execution time |
 | `server:create-daemons`, `server:delete-daemons` | Queue workers (background processes) |
 | `server:create-schedulers`, `server:delete-schedulers` | The scheduler |
@@ -113,7 +114,7 @@ An **instance** is a named server, such as `prod`, `staging` or `example-com-nod
 | Command | What it does |
 |---|---|
 | `blacksmith:localize` | Pull a Forge server (and its sites, workers, env, deploy script) into blueprints. Run it again any time to refresh. |
-| `blacksmith:make-server {instance}` | Create a DigitalOcean droplet (or use `--ip`), connect it to Forge as a custom server, run the provision script over SSH and wait until it's ready. |
+| `blacksmith:make-server {instance}` | Have Forge create and provision a DigitalOcean server with your Forge DigitalOcean credential, and wait until it's ready. With `--ip`, connect an existing box as a custom server instead (Forge's API doesn't return its provision command, so run it from the Forge dashboard when asked). |
 | `blacksmith:update-server {instance?}` | Push the blueprints to Forge. A site that's missing from the server gets created. Use `--dry-run` to see the changes first, `--only=env,workers` to limit what's pushed, and `--deploy` to deploy afterwards. Add `--rolling` to deploy load balanced sites one node at a time. |
 | `blacksmith:workers {up\|down\|restart\|status}` | Manage queue workers. `up` makes them match the blueprint and never duplicates them. |
 | `blacksmith:backup` | Zip `.blacksmith` and upload it to your backup storage. |
@@ -151,7 +152,7 @@ The server already running the site becomes the **primary** node. It is the only
 
 Forge recommends against upgrading Ubuntu in place. Instead, build a new server, move your sites over and retire the old one. `blacksmith:replace` does that in two steps, with a pause in between for you to switch DNS.
 
-First, set the new `ubuntu_version` **and** the matching `provider.image` in `.blacksmith/servers/app.json` (or pass `--profile=` to use another profile).
+First, set the new `ubuntu_version` in `.blacksmith/servers/app.json` (or pass `--profile=` to use another profile). Forge installs that Ubuntu version on the new server.
 
 ```
 php artisan blacksmith:replace prod              # builds prod-next and deploys the sites, with no scheduler, workers or SSL yet

@@ -14,7 +14,9 @@ use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\BackgroundProcess;
 use Laravel\Forge\Resources\Deployment;
 use Laravel\Forge\Resources\Server;
+use Laravel\Forge\Resources\ServerCredential;
 use Laravel\Forge\Resources\Site;
+use Laravel\Forge\Resources\VPC;
 use RuntimeException;
 
 /**
@@ -81,6 +83,32 @@ class ForgeGateway
     public function server(int $serverId): Server
     {
         return $this->forge->server($this->organization(), $serverId);
+    }
+
+    /**
+     * Create a server, Forge provisions it on the provider named in the payload. Returns without waiting.
+     */
+    public function createServer(array $payload): Server
+    {
+        return $this->send("creating server {$payload['name']}", fn () => $this->forge->createServer($this->organization(), $payload, false));
+    }
+
+    /**
+     * The organization's server credentials, the provider accounts Forge can create servers with.
+     *
+     * @return ServerCredential[]
+     */
+    public function serverCredentials(): array
+    {
+        return $this->all($this->forge->serverCredentials($this->organization()));
+    }
+
+    /**
+     * @return VPC[]
+     */
+    public function vpcs(int $credentialId, string $region): array
+    {
+        return $this->all($this->forge->vpcs($this->organization(), $credentialId, $region));
     }
 
     /**

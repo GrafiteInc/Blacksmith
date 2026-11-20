@@ -34,6 +34,10 @@ return [
     'forge_token' => env('BLACKSMITH_FORGE_TOKEN'),
     'forge_organization' => env('BLACKSMITH_FORGE_ORGANIZATION'),
 
+    // The Forge server credential (provider account) new DigitalOcean servers are created with,
+    // it can be left empty when the organization has only one DigitalOcean credential.
+    'forge_credential' => env('BLACKSMITH_FORGE_CREDENTIAL'),
+
     /*
     |--------------------------------------------------------------------------
     | Can be any storage driver array
@@ -79,6 +83,9 @@ return [
     |
     | These are the defaults for new servers, a server profile in
     | .blacksmith/servers/{profile}.json can override them via "provider".
+    | Forge creates DigitalOcean servers itself, with Ubuntu from the
+    | profile's ubuntu_version, in vpc_uuid or the region's default VPC.
+    | The token is only used to destroy droplets from older versions.
     |
     */
     'server_provider' => env('BLACKSMITH_SERVER_PROVIDER', 'digitalocean'),

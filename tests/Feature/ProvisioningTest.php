@@ -2,9 +2,14 @@
 
 namespace Tests\Feature;
 
+use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Laravel\Forge\Resources\PHPVersion;
+use Laravel\Forge\Resources\Server;
+use Mockery;
+use Tests\Fakes\FakeForgeManagedProvider;
 use Tests\Fakes\FakeServerProvider;
 use Tests\TestCase;
 
@@ -53,6 +58,54 @@ class ProvisioningTest extends TestCase
 
         $this->assertSame([], $this->provider->created);
         $this->assertSame('198.51.100.5', $this->state()->instance('box')['ip_address']);
+    }
+
+    public function test_forge_creates_and_provisions_the_server_on_a_managed_provider()
+    {
+        $provider = new FakeForgeManagedProvider;
+        $this->app->instance(ServerProvider::class, $provider);
+        $this->blueprints()->saveProfile('app', array_replace(BlueprintRepository::defaultProfile(), ['provider' => ['size_id' => 's-2vcpu-4gb']]));
+
+        $forge = $this->forge();
+        $forge->shouldNotReceive('createCustomServer');
+        $forge->shouldReceive('createServer')->once()->withArgs(fn ($payload) => $payload['name'] === 'worker-1'
+            && $payload['type'] === 'app'
+            && $payload['provider'] === 'ocean2'
+            && $payload['credential_id'] === 5
+            && $payload['ocean2'] === ['region_id' => 'tor1', 'size_id' => 's-2vcpu-4gb'])
+            ->andReturn(new Server(['id' => 710, 'name' => 'worker-1']));
+        $forge->shouldReceive('server')->with(710)->andReturn($this->server(['id' => 710, 'is_ready' => true, 'ip_address' => '198.51.100.10', 'private_ip_address' => '10.137.0.10']));
+        $forge->shouldReceive('phpVersions')->with(710)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('updatePhpLimits')->with(710, Mockery::any(), Mockery::any());
+
+        $this->artisan('blacksmith:make-server', ['instance' => 'worker-1'])
+            ->expectsOutputToContain('worker-1: Forge is creating and provisioning the server')
+            ->assertSuccessful();
+
+        $instance = $this->state()->instance('worker-1');
+
+        $this->assertSame([], $provider->created, 'Forge creates the server, not Blacksmith.');
+        $this->assertSame(710, $instance['server_id']);
+        $this->assertSame('198.51.100.10', $instance['ip_address']);
+        $this->assertSame('10.137.0.10', $instance['private_ip_address']);
+        $this->assertSame('fake', $instance['provider']);
+        $this->assertArrayNotHasKey('provider_id', $instance, 'Deleting the Forge server deletes it at the provider.');
+        Process::assertNothingRan();
+    }
+
+    public function test_a_custom_server_without_a_provision_command_waits_for_the_dashboard()
+    {
+        $forge = $this->forge();
+        $forge->shouldReceive('createCustomServer')->once()->andReturn(new Server(['id' => 702, 'name' => 'box']));
+        $forge->shouldReceive('server')->with(702)->andReturn($this->server(['id' => 702, 'is_ready' => true]));
+        $forge->shouldReceive('phpVersions')->with(702)->andReturn([new PHPVersion(['version' => 'php84'])]);
+        $forge->shouldReceive('updatePhpLimits')->with(702, Mockery::any(), Mockery::any());
+
+        $this->artisan('blacksmith:make-server', ['instance' => 'box', '--ip' => '198.51.100.7'])
+            ->expectsOutputToContain('box: Run the provision command from https://forge.laravel.com/servers/702 on 198.51.100.7 as root')
+            ->assertSuccessful();
+
+        Process::assertRanTimes(fn (PendingProcess $process) => end($process->command) !== 'true', 0);
     }
 
     public function test_a_failed_provision_script_is_reported()

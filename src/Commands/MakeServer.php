@@ -24,7 +24,7 @@ class MakeServer extends BlacksmithCommand
      *
      * @var string
      */
-    protected $description = 'Create a server, connect it to Forge as a custom server and provision it.';
+    protected $description = 'Have Forge create and provision a server, or connect an existing one as a custom server.';
 
     /**
      * Execute the console command.

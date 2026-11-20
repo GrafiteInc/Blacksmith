@@ -4,6 +4,7 @@ namespace Grafite\Blacksmith\Actions;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\Forge\ForgeGateway;
+use Grafite\Blacksmith\ServerProviders\ForgeManagedProvider;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
 use Grafite\Blacksmith\Support\Poll;
@@ -15,8 +16,11 @@ use Laravel\Forge\Resources\ServerTypes;
 use RuntimeException;
 
 /**
- * Create a box (or use an existing IP), connect it to Forge as a custom
- * server, run Forge's provision script over SSH and wait until it's ready.
+ * Get a new Forge server ready.
+ *
+ * On a provider Forge manages (DigitalOcean), Forge creates and provisions the
+ * server itself. Otherwise the box (an existing IP, or one from the provider)
+ * is connected to Forge as a custom server and provisioned over SSH.
  */
 class ProvisionServer
 {
@@ -47,6 +51,10 @@ class ProvisionServer
         if (! $ip) {
             $provider = app(ServerProvider::class);
 
+            if ($provider instanceof ForgeManagedProvider) {
+                return $this->createWithForge($instance, $profileName, $profile, $provider, $attributes);
+            }
+
             $this->report("{$instance}: Creating server with {$provider->name()}");
             $providerId = $provider->create($instance, $profile['provider'] ?? []);
 
@@ -64,16 +72,89 @@ class ProvisionServer
             $privateIp ??= $addresses['private_ip_address'];
         }
 
+        return $this->connectCustomServer($instance, $profileName, $profile, $ip, $privateIp, $attributes);
+    }
+
+    /**
+     * Forge creates the server at the provider and provisions it, and deletes it there with the Forge server.
+     */
+    protected function createWithForge(string $instance, string $profileName, array $profile, ServerProvider&ForgeManagedProvider $provider, array $attributes): array
+    {
+        $this->report("{$instance}: Creating the Forge server on {$provider->name()}");
+        $server = $this->forge->createServer(array_replace(
+            $this->payload($instance, $profile),
+            $provider->forgePayload($this->forge, $profile['provider'] ?? []),
+        ));
+
+        // No provider_id: deleting the Forge server deletes it at the provider too.
+        $this->state->putInstance($instance, array_replace($attributes, [
+            'server_id' => $server->id,
+            'profile' => $profileName,
+            'provider' => $provider->name(),
+        ]));
+
+        $this->report("{$instance}: Forge is creating and provisioning the server, this takes around 10 minutes");
+        $this->waitUntilReady($instance, $server->id);
+
+        $ready = $this->forge->server($server->id);
+
+        $this->state->putInstance($instance, [
+            'ip_address' => $ready->ipAddress,
+            'private_ip_address' => $ready->privateIpAddress,
+        ]);
+
+        $this->report("{$instance}: Server ready https://forge.laravel.com/servers/{$server->id}");
+
+        return $this->state->instance($instance);
+    }
+
+    protected function connectCustomServer(string $instance, string $profileName, array $profile, string $ip, ?string $privateIp, array $attributes): array
+    {
         $this->report("{$instance}: Waiting for SSH on {$ip}");
         $this->shell->waitUntilReachable($ip);
 
-        $payload = [
+        $this->report("{$instance}: Creating the Forge server");
+        $server = $this->forge->createCustomServer(array_replace($this->payload($instance, $profile), [
             'provider' => ServerProviders::CUSTOM,
+            'ip_address' => $ip,
+            'private_ip_address' => $privateIp,
+        ]));
+
+        $this->state->putInstance($instance, array_replace($attributes, [
+            'server_id' => $server->id,
+            'ip_address' => $ip,
+            'private_ip_address' => $privateIp,
+            'profile' => $profileName,
+        ]));
+
+        if ($server->provisionCommand) {
+            $this->report("{$instance}: Running the Forge provision script, this takes around 10 minutes");
+            $result = $this->shell->run($ip, $server->provisionCommand, (int) config('blacksmith.provision_timeout', 1800));
+
+            if (! $result->successful()) {
+                throw new RuntimeException("{$instance}: The provision script failed.".PHP_EOL.Str::of($result->errorOutput() ?: $result->output())->limit(2000));
+            }
+        } else {
+            // Forge's API v2 leaves the provision command out, it's only shown in the dashboard.
+            $this->report("{$instance}: Run the provision command from https://forge.laravel.com/servers/{$server->id} on {$ip} as root, waiting for Forge to report the server as ready", 'warn');
+        }
+
+        $this->waitUntilReady($instance, $server->id);
+
+        $this->report("{$instance}: Server ready https://forge.laravel.com/servers/{$server->id}");
+
+        return $this->state->instance($instance);
+    }
+
+    /**
+     * The profile's part of Forge's create server request.
+     */
+    protected function payload(string $instance, array $profile): array
+    {
+        $payload = [
             'name' => $instance,
             'type' => $profile['type'],
             'ubuntu_version' => $profile['ubuntu_version'],
-            'ip_address' => $ip,
-            'private_ip_address' => $privateIp,
         ];
 
         if ($profile['type'] !== ServerTypes::LOADBALANCER) {
@@ -84,28 +165,7 @@ class ProvisionServer
             $payload['database_type'] = $profile['database_type'];
         }
 
-        $this->report("{$instance}: Creating the Forge server");
-        $server = $this->forge->createCustomServer($payload);
-
-        $this->state->putInstance($instance, array_replace($attributes, [
-            'server_id' => $server->id,
-            'ip_address' => $ip,
-            'private_ip_address' => $privateIp,
-            'profile' => $profileName,
-        ]));
-
-        $this->report("{$instance}: Running the Forge provision script, this takes around 10 minutes");
-        $result = $this->shell->run($ip, $server->provisionCommand, (int) config('blacksmith.provision_timeout', 1800));
-
-        if (! $result->successful()) {
-            throw new RuntimeException("{$instance}: The provision script failed.".PHP_EOL.Str::of($result->errorOutput() ?: $result->output())->limit(2000));
-        }
-
-        $this->waitUntilReady($instance, $server->id);
-
-        $this->report("{$instance}: Server ready https://forge.laravel.com/servers/{$server->id}");
-
-        return $this->state->instance($instance);
+        return $payload;
     }
 
     protected function waitUntilReady(string $instance, int $serverId): void

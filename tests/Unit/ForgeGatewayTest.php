@@ -114,6 +114,26 @@ class ForgeGatewayTest extends TestCase
         $this->assertSame(['ip_address' => '1.2.3.4', 'private_ip_address' => '10.0.0.2', 'ssh_port' => 2222], $this->sent()[0][2]['custom'], 'The configured SSH port is sent to Forge.');
     }
 
+    public function test_forge_managed_servers_credentials_and_vpcs_use_the_v2_routes()
+    {
+        $gateway = $this->gateway([
+            ['data' => self::item(710, ['name' => 'box'])],
+            ['data' => [self::item(33278, ['name' => 'DigitalOcean', 'provider' => 'DigitalOcean'])]],
+            ['data' => [['id' => 'vpc-uuid', 'type' => 'vpcs', 'attributes' => ['name' => 'default-tor1', 'region' => 'tor1']]]],
+        ]);
+
+        $payload = ['name' => 'box', 'provider' => 'ocean2', 'credential_id' => 33278, 'ocean2' => ['region_id' => 'tor1']];
+
+        $this->assertSame(710, $gateway->createServer($payload)->id);
+        $this->assertSame('DigitalOcean', $gateway->serverCredentials()[0]->provider);
+        $this->assertSame('vpc-uuid', $gateway->vpcs(33278, 'tor1')[0]->id);
+
+        $sent = $this->sent();
+        $this->assertSame(['POST', '/api/orgs/acme/servers', $payload], $sent[0]);
+        $this->assertSame(['GET', '/api/orgs/acme/server-credentials'], array_slice($sent[1], 0, 2));
+        $this->assertSame(['GET', '/api/orgs/acme/server-credentials/33278/regions/tor1/vpcs'], array_slice($sent[2], 0, 2));
+    }
+
     public function test_forge_rejections_name_the_fields_forge_gave()
     {
         $gateway = $this->gateway([
