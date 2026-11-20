@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\BuildInstance;
+use Grafite\Blacksmith\Actions\PointDns;
 use RuntimeException;
 
 class Instance extends BlacksmithCommand
@@ -18,7 +19,8 @@ class Instance extends BlacksmithCommand
         {--profile=app : The server profile in .blacksmith/servers}
         {--ip= : Use an existing server at this IP instead of creating one}
         {--private-ip= : The private IP of the existing server}
-        {--no-deploy : Skip the first deployment}';
+        {--no-deploy : Skip the first deployment}
+        {--dns : Point the sites\' DNS at the new server before requesting certificates}';
 
     /**
      * The console command description.
@@ -38,6 +40,10 @@ class Instance extends BlacksmithCommand
         $sites = $this->option('site') ?: $this->blueprints()->sites();
 
         try {
+            if ($this->option('dns') && ! PointDns::enabled()) {
+                throw new RuntimeException('--dns needs a DNS provider, set BLACKSMITH_DNS_PROVIDER=cloudflare and BLACKSMITH_CLOUDFLARE_TOKEN.');
+            }
+
             if (empty($sites)) {
                 throw new RuntimeException('There are no site blueprints, run blacksmith:localize first.');
             }
@@ -57,6 +63,8 @@ class Instance extends BlacksmithCommand
                 $this->option('private-ip'),
                 null,
                 ! $this->option('no-deploy'),
+                [],
+                (bool) $this->option('dns'),
             );
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);
@@ -65,7 +73,9 @@ class Instance extends BlacksmithCommand
         $instance = $this->state()->instance($name);
 
         $this->info("Instance {$name} is live at {$instance['ip_address']} with: ".implode(', ', $sites));
-        $this->line('Point DNS at it when you are ready, the env can be customized per instance in .blacksmith/sites/{domain}/.env.'.$name);
+        if (! $this->option('dns')) {
+            $this->line('Point DNS at it when you are ready (or run blacksmith:dns '.$name.'), the env can be customized per instance in .blacksmith/sites/{domain}/.env.'.$name);
+        }
 
         return self::SUCCESS;
     }

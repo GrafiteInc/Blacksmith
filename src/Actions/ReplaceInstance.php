@@ -11,7 +11,8 @@ use RuntimeException;
  *
  *  build:   {instance}-next gets the sites and a deploy, but no scheduler, workers or certificate
  *  cutover: the old server stops its scheduler and workers, the names are swapped so the new
- *           server becomes {instance}, then it gets the scheduler, workers and certificate
+ *           server becomes {instance}, DNS is pointed at it (when a DNS provider is set), then it
+ *           gets the scheduler, workers and certificate
  *  finish:  the old server, kept as {instance}-old, is deleted
  *  abort:   the new server is deleted before cutover
  */
@@ -23,6 +24,7 @@ class ReplaceInstance
         protected SyncSite $site,
         protected ConfigureBalancer $balancer,
         protected DestroyInstance $destroy,
+        protected PointDns $dns,
     ) {}
 
     public function reportUsing(?callable $reporter): static
@@ -77,7 +79,7 @@ class ReplaceInstance
         return $name;
     }
 
-    public function cutover(string $instance, Plan $plan): string
+    public function cutover(string $instance, Plan $plan, bool $dns = true): string
     {
         $replacement = $this->replacement($instance);
         $retired = static::retiredName($instance);
@@ -101,15 +103,33 @@ class ReplaceInstance
 
         $this->state->promoteReplacement($instance, $retired);
 
+        // A DNS failure must not leave the site without its scheduler and workers, only the certificate waits for it.
+        $dnsError = null;
+
+        if ($dns && PointDns::enabled()) {
+            try {
+                foreach ($this->state->publicSitesFor($instance) as $domain) {
+                    $this->dns->handle($domain, $instance, $plan);
+                }
+            } catch (RuntimeException $exception) {
+                $dnsError = $exception;
+                $plan->note('DNS: '.$exception->getMessage(), 'error');
+            }
+        }
+
         try {
             foreach ($roles as $domain => $role) {
-                $pooled = $this->isPooled($instance, $domain);
+                $pooled = $this->state->isPooled($instance, $domain);
 
                 $sections = match ($role) {
                     'primary' => $pooled ? ['scheduler', 'workers'] : ['scheduler', 'workers', 'ssl'],
                     'balancer' => ['ssl'],
                     default => [],
                 };
+
+                if ($dnsError) {
+                    $sections = array_values(array_diff($sections, ['ssl']));
+                }
 
                 if ($sections) {
                     $this->site->handle($instance, $domain, $plan, $sections);
@@ -121,6 +141,11 @@ class ReplaceInstance
             }
         } catch (RuntimeException $exception) {
             throw new RuntimeException($exception->getMessage().PHP_EOL."{$instance} now points at the new server, finish with: php artisan blacksmith:update-server {$instance}", 0, $exception);
+        }
+
+        if ($dnsError) {
+            throw new RuntimeException("{$instance} is on the new server with its scheduler and workers, but DNS could not be updated: {$dnsError->getMessage()}".PHP_EOL
+                ."Finish with: php artisan blacksmith:dns {$instance} && php artisan blacksmith:update-server {$instance} --only=ssl", 0, $dnsError);
         }
 
         return $retired;
@@ -154,27 +179,5 @@ class ReplaceInstance
     {
         return $this->state->retiredFor($instance)
             ?? throw new RuntimeException("{$instance} has no old server to delete.");
-    }
-
-    /**
-     * The sites whose DNS points straight at the instance, rather than at a load balancer in front of it.
-     */
-    public function publicSites(string $instance): array
-    {
-        return collect($this->state->sitesFor($instance))
-            ->filter(fn ($domain) => match ($this->state->roleFor($instance, $domain)) {
-                'balancer' => true,
-                'primary' => ! $this->isPooled($instance, $domain),
-                default => false,
-            })
-            ->values()
-            ->toArray();
-    }
-
-    protected function isPooled(string $instance, string $domain): bool
-    {
-        $pool = $this->state->pool($domain);
-
-        return $pool && in_array($instance, $pool['nodes'], true);
     }
 }

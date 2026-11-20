@@ -8,6 +8,9 @@ use Grafite\Blacksmith\Support\Plan;
 
 /**
  * A new server with the given site blueprints pushed to it and deployed.
+ *
+ * With $dns each site's DNS is pointed at the new server before its
+ * certificate is requested, so Let's Encrypt can reach it.
  */
 class BuildInstance
 {
@@ -17,6 +20,7 @@ class BuildInstance
         protected ProvisionServer $provision,
         protected SyncServer $server,
         protected SyncSite $site,
+        protected PointDns $dns,
     ) {}
 
     public function reportUsing(?callable $reporter): static
@@ -36,14 +40,23 @@ class BuildInstance
         ?string $role = null,
         bool $deploy = true,
         array $attributes = [],
+        bool $dns = false,
     ): array {
         $this->provision->handle($name, $profile, $ip, $privateIp, $attributes);
 
         $this->server->handle($name, $plan);
 
         foreach ($sites as $domain) {
-            $siteId = $this->site->handle($name, $domain, $plan, [], $role);
             $siteRole = $role ?? $this->state->roleFor($name, $domain);
+            $pointDns = $dns && $siteRole !== 'web' && $this->dns->manages($domain);
+
+            if ($pointDns) {
+                $siteId = $this->site->handle($name, $domain, $plan, array_values(array_diff(SyncSite::SECTIONS, ['ssl'])), $role);
+                $this->dns->handle($domain, $name, $plan);
+                $this->site->handle($name, $domain, $plan, ['ssl'], $role);
+            } else {
+                $siteId = $this->site->handle($name, $domain, $plan, [], $role);
+            }
 
             if ($deploy && $siteId && $siteRole !== 'balancer') {
                 $serverId = $this->state->instance($name)['server_id'];

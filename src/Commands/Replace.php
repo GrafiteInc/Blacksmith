@@ -2,6 +2,7 @@
 
 namespace Grafite\Blacksmith\Commands;
 
+use Grafite\Blacksmith\Actions\PointDns;
 use Grafite\Blacksmith\Actions\ReplaceInstance;
 use Grafite\Blacksmith\Support\EnvFile;
 use RuntimeException;
@@ -22,6 +23,7 @@ class Replace extends BlacksmithCommand
         {--cutover : Swap the new server in, moving the scheduler, workers and certificate to it}
         {--finish : Delete the old server once the new one is live}
         {--abort : Delete the new server before cutover}
+        {--no-dns : Leave DNS alone during cutover}
         {--force : Delete servers without asking}';
 
     /**
@@ -71,7 +73,7 @@ class Replace extends BlacksmithCommand
 
         $ip = $this->state()->instance($name)['ip_address'];
         $sites = $this->state()->sitesFor($instance);
-        $public = $replace->publicSites($instance);
+        $public = $this->state()->publicSitesFor($instance);
 
         $this->info("{$name} is ready at {$ip} with: ".implode(', ', $sites));
 
@@ -91,11 +93,23 @@ class Replace extends BlacksmithCommand
             return self::SUCCESS;
         }
 
+        $dns = $this->laravel->make(PointDns::class);
+        $automatic = array_values(array_filter($public, fn ($domain) => $dns->manages($domain)));
+        $manual = array_values(array_diff($public, $automatic));
+
         $this->line('Next:');
         $this->line("  1. Test it, for example add \"{$ip} {$public[0]}\" to your hosts file");
         $this->line("  2. Move any data that lives on {$instance}, such as a local database or uploads");
-        $this->line('  3. Point DNS for '.implode(', ', $public)." at {$ip}");
-        $this->line("  4. php artisan blacksmith:replace {$instance} --cutover");
+
+        if ($manual) {
+            $this->line('  3. Point DNS for '.implode(', ', $manual)." at {$ip}");
+        }
+
+        $this->line('  '.($manual ? 4 : 3).". php artisan blacksmith:replace {$instance} --cutover");
+
+        if ($automatic) {
+            $this->line('     DNS for '.implode(', ', $automatic)." will be pointed at {$ip} on cutover (".PointDns::providerName().').');
+        }
 
         return self::SUCCESS;
     }
@@ -103,7 +117,7 @@ class Replace extends BlacksmithCommand
     protected function cutover(ReplaceInstance $replace, string $instance): int
     {
         $plan = $this->plan();
-        $retired = $replace->cutover($instance, $plan);
+        $retired = $replace->cutover($instance, $plan, ! $this->option('no-dns'));
         $old = $this->state()->instance($retired);
 
         $this->info("{$instance} is now on {$this->state()->instance($instance)['ip_address']}, the old server is kept as {$retired}.");

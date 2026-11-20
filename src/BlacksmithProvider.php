@@ -5,6 +5,7 @@ namespace Grafite\Blacksmith;
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\Commands\Backup;
 use Grafite\Blacksmith\Commands\Balancer;
+use Grafite\Blacksmith\Commands\Dns;
 use Grafite\Blacksmith\Commands\Instance;
 use Grafite\Blacksmith\Commands\Localize;
 use Grafite\Blacksmith\Commands\MakeServer;
@@ -12,6 +13,8 @@ use Grafite\Blacksmith\Commands\Replace;
 use Grafite\Blacksmith\Commands\Scale;
 use Grafite\Blacksmith\Commands\UpdateServer;
 use Grafite\Blacksmith\Commands\Workers;
+use Grafite\Blacksmith\Dns\CloudflareDnsProvider;
+use Grafite\Blacksmith\Dns\DnsProvider;
 use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\DigitalOceanProvider;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
@@ -82,6 +85,15 @@ class BlacksmithProvider extends ServiceProvider
             default => throw new InvalidArgumentException('Unsupported server provider ['.config('blacksmith.server_provider').'], pass --ip to use an existing server.'),
         });
 
+        $this->app->singleton(DnsProvider::class, fn ($app) => match (config('blacksmith.dns.provider')) {
+            'cloudflare' => new CloudflareDnsProvider(
+                config('blacksmith.dns.cloudflare.token'),
+                filter_var(config('blacksmith.dns.cloudflare.proxied', true), FILTER_VALIDATE_BOOL),
+                array_replace($app->make(StateRepository::class)->dnsZones(), (array) config('blacksmith.dns.cloudflare.zones', [])),
+            ),
+            default => throw new InvalidArgumentException('Unsupported DNS provider ['.config('blacksmith.dns.provider').'], set BLACKSMITH_DNS_PROVIDER=cloudflare.'),
+        });
+
         $this->commands([
             Localize::class,
             MakeServer::class,
@@ -92,6 +104,7 @@ class BlacksmithProvider extends ServiceProvider
             Balancer::class,
             Scale::class,
             Replace::class,
+            Dns::class,
         ]);
     }
 }

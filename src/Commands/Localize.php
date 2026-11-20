@@ -2,6 +2,7 @@
 
 namespace Grafite\Blacksmith\Commands;
 
+use Grafite\Blacksmith\Actions\PullDns;
 use Grafite\Blacksmith\Actions\PullFromForge;
 use Grafite\Blacksmith\Blueprint\LegacyMigrator;
 use Grafite\Blacksmith\Forge\ForgeGateway;
@@ -32,7 +33,7 @@ class Localize extends BlacksmithCommand
      *
      * @return int
      */
-    public function handle(LegacyMigrator $migrator, PullFromForge $pull)
+    public function handle(LegacyMigrator $migrator, PullFromForge $pull, PullDns $dns)
     {
         try {
             $this->blueprints()->ensureRoot();
@@ -56,6 +57,12 @@ class Localize extends BlacksmithCommand
             } else {
                 [$serverId, $instance] = $this->chooseServer();
                 $pull->server($serverId, $instance, $this->option('profile'));
+            }
+
+            $dns->reportUsing($this->reporter());
+
+            foreach ($this->blueprints()->sites() as $domain) {
+                $dns->handle($domain);
             }
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);

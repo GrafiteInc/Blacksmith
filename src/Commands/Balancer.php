@@ -3,6 +3,7 @@
 namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Actions\ConfigureBalancer;
+use Grafite\Blacksmith\Actions\PointDns;
 use Grafite\Blacksmith\Actions\ProvisionServer;
 use Grafite\Blacksmith\Actions\SyncSite;
 use Grafite\Blacksmith\Support\Defaults;
@@ -21,7 +22,8 @@ class Balancer extends BlacksmithCommand
         {--method= : round_robin, least_conn or ip_hash, defaults to blacksmith.defaults.balancer.method}
         {--profile=balancer : The server profile in .blacksmith/servers}
         {--ip= : Use an existing server at this IP instead of creating one}
-        {--private-ip= : The private IP of the existing server}';
+        {--private-ip= : The private IP of the existing server}
+        {--no-dns : Leave DNS alone, point it at the balancer yourself}';
 
     /**
      * The console command description.
@@ -35,10 +37,11 @@ class Balancer extends BlacksmithCommand
      *
      * @return int
      */
-    public function handle(ProvisionServer $provision, SyncSite $site)
+    public function handle(ProvisionServer $provision, SyncSite $site, PointDns $dns)
     {
         $name = $this->argument('name');
         $method = $this->option('method') ?: Defaults::get('balancer.method', 'round_robin');
+        $pointDns = false;
 
         try {
             $domain = $this->siteOption();
@@ -70,7 +73,16 @@ class Balancer extends BlacksmithCommand
                 'method' => $method,
             ]);
 
-            $site->handle($name, $domain, $this->plan(), [], 'balancer');
+            $plan = $this->plan();
+            $pointDns = ! $this->option('no-dns') && $dns->manages($domain);
+
+            if ($pointDns) {
+                $site->handle($name, $domain, $plan, array_values(array_diff(SyncSite::SECTIONS, ['ssl'])), 'balancer');
+                $dns->handle($domain, $name, $plan);
+                $site->handle($name, $domain, $plan, ['ssl'], 'balancer');
+            } else {
+                $site->handle($name, $domain, $plan, [], 'balancer');
+            }
         } catch (RuntimeException $exception) {
             return $this->failWith($exception);
         }
@@ -79,9 +91,13 @@ class Balancer extends BlacksmithCommand
 
         $this->info("{$name} is balancing {$domain} at {$instance['ip_address']}.");
         $this->line('Next:');
-        $this->line("  1. Point {$domain}'s DNS at {$instance['ip_address']}");
-        $this->line("  2. php artisan blacksmith:update-server {$name} --only=ssl");
-        $this->line("  3. php artisan blacksmith:scale {$domain} --to=2");
+
+        if (! $pointDns) {
+            $this->line("  - Point {$domain}'s DNS at {$instance['ip_address']}");
+            $this->line("  - php artisan blacksmith:update-server {$name} --only=ssl");
+        }
+
+        $this->line("  - php artisan blacksmith:scale {$domain} --to=2");
 
         return self::SUCCESS;
     }
