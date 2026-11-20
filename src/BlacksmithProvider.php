@@ -11,6 +11,7 @@ use Grafite\Blacksmith\Commands\Localize;
 use Grafite\Blacksmith\Commands\MakeServer;
 use Grafite\Blacksmith\Commands\Replace;
 use Grafite\Blacksmith\Commands\Scale;
+use Grafite\Blacksmith\Commands\SudoPassword;
 use Grafite\Blacksmith\Commands\UpdateServer;
 use Grafite\Blacksmith\Commands\Workers;
 use Grafite\Blacksmith\Dns\CloudflareDnsProvider;
@@ -19,7 +20,10 @@ use Grafite\Blacksmith\Forge\ForgeGateway;
 use Grafite\Blacksmith\ServerProviders\DigitalOceanProvider;
 use Grafite\Blacksmith\ServerProviders\ServerProvider;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\AccessReport;
+use Grafite\Blacksmith\Support\Defaults;
 use Grafite\Blacksmith\Support\RemoteShell;
+use Grafite\Blacksmith\Support\SshConfig;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Laravel\Forge\Forge;
@@ -77,6 +81,17 @@ class BlacksmithProvider extends ServiceProvider
             (int) config('blacksmith.ssh.port', 22),
         ));
 
+        $this->app->singleton(AccessReport::class);
+
+        $this->app->bind(SshConfig::class, fn () => new SshConfig(
+            config('blacksmith.ssh_config.path'),
+            filter_var(config('blacksmith.ssh_config.enabled', true), FILTER_VALIDATE_BOOL),
+            config('blacksmith.project'),
+            Defaults::user(),
+            (int) config('blacksmith.ssh.port', 22),
+            config('blacksmith.ssh.key') ?: null,
+        ));
+
         $this->app->bind(ServerProvider::class, fn () => match (config('blacksmith.server_provider')) {
             'digitalocean' => new DigitalOceanProvider(
                 config('blacksmith.server_provider_token'),
@@ -106,6 +121,7 @@ class BlacksmithProvider extends ServiceProvider
             Scale::class,
             Replace::class,
             Dns::class,
+            SudoPassword::class,
         ]);
     }
 }

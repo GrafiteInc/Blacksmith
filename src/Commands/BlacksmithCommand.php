@@ -4,6 +4,7 @@ namespace Grafite\Blacksmith\Commands;
 
 use Grafite\Blacksmith\Blueprint\BlueprintRepository;
 use Grafite\Blacksmith\State\StateRepository;
+use Grafite\Blacksmith\Support\AccessReport;
 use Grafite\Blacksmith\Support\Plan;
 use Illuminate\Console\Command;
 use Laravel\Forge\Resources\ServerTypes;
@@ -113,6 +114,31 @@ abstract class BlacksmithCommand extends Command
         }
 
         return $sites[0];
+    }
+
+    /**
+     * The login details of the servers made by this command, printed once and stored nowhere.
+     */
+    protected function printAccessReport(): void
+    {
+        $report = $this->laravel->make(AccessReport::class);
+
+        if ($report->isEmpty()) {
+            return;
+        }
+
+        $this->newLine();
+        $this->info($report->hasPasswords()
+            ? 'Server access, save it now (to 1Password, for example), the sudo password is not stored anywhere:'
+            : 'Server access:');
+        $this->newLine();
+        foreach (explode(PHP_EOL, $report->render()) as $line) {
+            $this->line($line);
+        }
+
+        $this->newLine();
+
+        $report->flush();
     }
 
     protected function failWith(RuntimeException $exception): int

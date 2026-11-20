@@ -39,6 +39,10 @@ abstract class TestCase extends OrchestraTestCase
         $app['config']->set('blacksmith.forge_token', 'test-token');
         $app['config']->set('blacksmith.poll_interval', 0);
 
+        // Tests that cover these turn the sudo password back on, nothing writes to the real ~/.ssh/config.
+        $app['config']->set('blacksmith.sudo_password', false);
+        $app['config']->set('blacksmith.ssh_config.path', $this->root.'/ssh_config');
+
         // The fixtures are built around these, so bumping the shipped defaults doesn't break the suite.
         $app['config']->set('blacksmith.defaults.server.ubuntu_version', '24.04');
         $app['config']->set('blacksmith.defaults.server.php_version', 'php84');

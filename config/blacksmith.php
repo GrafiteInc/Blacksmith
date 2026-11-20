@@ -66,6 +66,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Server access
+    |--------------------------------------------------------------------------
+    |
+    | Forge's API no longer returns the sudo password it gives the Forge
+    | user, so new servers get a fresh one from a throwaway recipe that
+    | is deleted after it runs. It's printed once at the end with the IP,
+    | to save in a password manager, and stored nowhere.
+    |
+    | Each instance also gets a Host entry in your SSH config, named
+    | {project}-{instance} (just {instance} when project is empty), so
+    | `ssh {project}-{instance}` logs in as the Forge user.
+    |
+    */
+    'sudo_password' => env('BLACKSMITH_SUDO_PASSWORD', true),
+
+    'ssh_config' => [
+        'enabled' => env('BLACKSMITH_SSH_CONFIG', true),
+        'path' => env('BLACKSMITH_SSH_CONFIG_PATH', '~/.ssh/config'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Polling (seconds)
     |--------------------------------------------------------------------------
     */
