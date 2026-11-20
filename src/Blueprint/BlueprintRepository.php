@@ -112,6 +112,25 @@ class BlueprintRepository
         $this->writeJson($this->sitePath($domain).'/site.json', $site);
     }
 
+    /**
+     * Whether the site deploys into releases with a current symlink. A blueprint
+     * without "zero_downtime" follows its deploy script, which can only work one way.
+     */
+    public function zeroDowntime(string $domain): bool
+    {
+        $setting = $this->site($domain)['zero_downtime'] ?? null;
+
+        return is_null($setting) ? static::usesReleases($this->deployScript($domain)) : (bool) $setting;
+    }
+
+    /**
+     * Whether a deploy script is written for Forge's zero-downtime deployments.
+     */
+    public static function usesReleases(string $script): bool
+    {
+        return str_contains($script, '$CREATE_RELEASE') || str_contains($script, '$ACTIVATE_RELEASE');
+    }
+
     public function sitePath(string $domain): string
     {
         return $this->root.'/sites/'.$domain;
@@ -131,6 +150,8 @@ class BlueprintRepository
             'lets_encrypt' => (bool) ($site['lets_encrypt'] ?? true),
             'ssl_domains' => [$domain],
             'quick_deploy' => (bool) ($site['quick_deploy'] ?? false),
+            // null follows deploy.sh, see zeroDowntime()
+            'zero_downtime' => isset($site['zero_downtime']) ? (bool) $site['zero_downtime'] : null,
             'scheduler' => (bool) ($site['scheduler'] ?? false),
             'workers' => [],
             'redirects' => [],

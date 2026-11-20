@@ -136,6 +136,7 @@ class PullFromForge
             'lets_encrypt' => (bool) $site->https,
             'ssl_domains' => array_values(array_unique(array_merge([$domain], $aliases))),
             'quick_deploy' => (bool) $site->quickDeploy,
+            'zero_downtime' => $site->zeroDowntimeDeployments ?? ($existing['zero_downtime'] ?? null),
             'scheduler' => $jobs->contains(fn ($job) => SyncSite::isSchedulerFor($job->command, $domain)),
             'workers' => $this->workers->pull($server->id, $site),
             'redirects' => collect($this->forge->redirectRules($server->id, $site->id))->map(fn ($rule) => [

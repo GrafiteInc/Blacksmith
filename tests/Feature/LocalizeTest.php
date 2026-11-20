@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Grafite\Blacksmith\Dns\DnsProvider;
 use Laravel\Forge\Resources\LoadBalancingNode;
 use Laravel\Forge\Resources\RedirectRule;
+use Laravel\Forge\Resources\ScheduledJob;
 use Laravel\Forge\Resources\SecurityRule;
 use Mockery;
 use Tests\TestCase;
@@ -26,6 +27,26 @@ class LocalizeTest extends TestCase
         ]);
         $forge->shouldReceive('siteEnvironmentFile')->with($server['id'], $site['id'])->andReturn($env);
         $forge->shouldReceive('siteDeploymentScript')->andReturn("git pull\n");
+    }
+
+    public function test_a_zero_downtime_site_keeps_its_setting_and_scheduler()
+    {
+        $forge = $this->forge();
+        $forge->shouldReceive('server')->with(100)->andReturn($this->server());
+        $forge->shouldReceive('sites')->with(100)->andReturn([$this->site(['zero_downtime_deployments' => true])]);
+        $forge->shouldReceive('scheduledJobs')->with(100)->andReturn([
+            new ScheduledJob(['id' => 1, 'command' => 'php8.4 /home/forge/example.com/current/artisan schedule:run']),
+        ]);
+        $forge->shouldReceive('backgroundProcesses', 'redirectRules', 'securityRules')->andReturn([]);
+        $forge->shouldReceive('siteEnvironmentFile')->andReturn("APP_NAME=Example\n");
+        $forge->shouldReceive('siteDeploymentScript')->andReturn("\$CREATE_RELEASE()\n\$ACTIVATE_RELEASE()\n");
+
+        $this->artisan('blacksmith:localize', ['--server' => 100])->assertSuccessful();
+
+        $site = $this->blueprints()->site('example.com');
+
+        $this->assertTrue($site['zero_downtime']);
+        $this->assertTrue($site['scheduler']);
     }
 
     public function test_localize_pulls_a_server_into_blueprints_and_state()

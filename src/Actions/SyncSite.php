@@ -55,7 +55,7 @@ class SyncSite
         $siteId = $site?->id;
 
         if (! $created && $site && $should('site')) {
-            $this->updateSite($serverId, $site, $blueprint, $role, $plan, $label);
+            $this->updateSite($instance, $domain, $serverId, $site, $blueprint, $role, $plan, $label);
         }
 
         if ($role !== 'balancer') {
@@ -68,11 +68,17 @@ class SyncSite
             }
 
             if ($should('deploy')) {
-                $this->syncFile('deployment script', $this->blueprints->deployScript($domain), $serverId, $siteId, $created, $plan, $label);
+                $script = $this->blueprints->deployScript($domain);
+
+                if ($mismatch = static::deployScriptMismatch($this->blueprints->zeroDowntime($domain), $script)) {
+                    $plan->note($label.$mismatch);
+                }
+
+                $this->syncFile('deployment script', $script, $serverId, $siteId, $created, $plan, $label);
             }
 
             if ($should('scheduler')) {
-                $this->syncScheduler($serverId, $domain, $role === 'primary' && $blueprint['scheduler'], $plan, $label);
+                $this->syncScheduler($serverId, $domain, $site, $role === 'primary' && $blueprint['scheduler'], $plan, $label);
             }
 
             if ($should('workers')) {
@@ -132,7 +138,7 @@ class SyncSite
                 'domain' => $domain,
                 'balancer_method' => $this->state->pool($domain)['method'] ?? Defaults::get('balancer.method', 'round_robin'),
             ])
-            : $this->forge->createSite($serverId, static::createPayload($blueprint)));
+            : $this->forge->createSite($serverId, static::createPayload($blueprint, $this->blueprints->zeroDowntime($domain))));
 
         if ($site) {
             $this->state->setSiteId($instance, $domain, $site->id);
@@ -145,7 +151,7 @@ class SyncSite
         return [$site, true];
     }
 
-    protected function updateSite(int $serverId, Site $site, array $blueprint, string $role, Plan $plan, string $label): void
+    protected function updateSite(string $instance, string $domain, int $serverId, Site $site, array $blueprint, string $role, Plan $plan, string $label): void
     {
         $aliases = collect($blueprint['aliases'])->sort()->values()->toArray();
         $current = collect(array_diff($site->aliases ?? [], [$site->name]))->sort()->values()->toArray();
@@ -156,6 +162,13 @@ class SyncSite
 
         if ($role === 'balancer') {
             return;
+        }
+
+        $zeroDowntime = $this->blueprints->zeroDowntime($domain);
+
+        if (! is_null($site->zeroDowntimeDeployments) && $site->zeroDowntimeDeployments !== $zeroDowntime) {
+            $plan->note($label.'The site '.($site->zeroDowntimeDeployments ? 'uses' : 'does not use').' zero-downtime deployments but the blueprint '
+                .($zeroDowntime ? 'does' : 'does not').". Forge only sets this when a site is created, run blacksmith:replace {$this->state->blueprintName($instance)} to move it to a new server.");
         }
 
         if ($site->webDirectory && $site->webDirectory !== $blueprint['directory']) {
@@ -173,8 +186,9 @@ class SyncSite
 
     /**
      * The v2 create site payload, the repository is installed as part of it.
+     * Zero-downtime deployments are always sent, Forge turns them on when they're left out.
      */
-    public static function createPayload(array $blueprint): array
+    public static function createPayload(array $blueprint, ?bool $zeroDowntime = null): array
     {
         $payload = [
             'name' => $blueprint['domain'],
@@ -182,6 +196,7 @@ class SyncSite
             'web_directory' => $blueprint['directory'],
             'is_isolated' => false,
             'php_version' => $blueprint['php_version'],
+            'zero_downtime_deployments' => $zeroDowntime ?? (bool) ($blueprint['zero_downtime'] ?? false),
         ];
 
         if ($repository = $blueprint['repository'] ?? null) {
@@ -264,14 +279,21 @@ class SyncSite
             : $this->forge->updateSiteDeploymentScript($serverId, $siteId, $contents));
     }
 
-    protected function syncScheduler(int $serverId, string $domain, bool $enabled, Plan $plan, string $label): void
+    protected function syncScheduler(int $serverId, string $domain, ?Site $site, bool $enabled, Plan $plan, string $label): void
     {
         $job = collect($this->forge->scheduledJobs($serverId))->first(fn ($job) => static::isSchedulerFor($job->command, $domain));
+        $artisan = $this->siteRoot($domain, $site).'/artisan schedule:run';
+
+        // A scheduler outside the code's directory, such as one missing /current, never runs anything.
+        if ($enabled && $job && ! Str::contains((string) $job->command, $artisan)) {
+            $plan->step($label."Move scheduler to {$artisan}", fn () => $this->forge->deleteScheduledJob($serverId, $job->id));
+            $job = null;
+        }
 
         if ($enabled && ! $job) {
             $plan->step($label.'Create scheduler', fn () => $this->forge->createScheduledJob($serverId, [
                 'name' => "{$domain} scheduler",
-                'command' => Php::binary($this->blueprints->site($domain)['php_version']).' /home/'.Defaults::user()."/{$domain}/artisan schedule:run",
+                'command' => Php::binary($this->blueprints->site($domain)['php_version']).' '.$artisan,
                 'frequency' => Defaults::get('scheduler.frequency', 'minutely'),
                 'user' => Defaults::user(),
             ]));
@@ -280,6 +302,40 @@ class SyncSite
         if (! $enabled && $job) {
             $plan->step($label.'Remove scheduler', fn () => $this->forge->deleteScheduledJob($serverId, $job->id));
         }
+    }
+
+    /**
+     * Where the site's code runs from, worked out from the blueprint when the site doesn't exist yet (a dry run).
+     */
+    protected function siteRoot(string $domain, ?Site $site): string
+    {
+        if ($site) {
+            return ForgeGateway::siteRoot($site);
+        }
+
+        return '/home/'.Defaults::user()."/{$domain}".($this->blueprints->zeroDowntime($domain) ? '/current' : '');
+    }
+
+    /**
+     * Why a deploy script won't work with the site's deployment style, if it won't.
+     */
+    public static function deployScriptMismatch(bool $zeroDowntime, string $script): ?string
+    {
+        if (trim($script) === '') {
+            return null;
+        }
+
+        $releases = BlueprintRepository::usesReleases($script);
+
+        if ($zeroDowntime && ! $releases) {
+            return 'The site uses zero-downtime deployments but deploy.sh has no $CREATE_RELEASE() / $ACTIVATE_RELEASE(), so deploys would run in place. Use Forge\'s zero-downtime deploy script.';
+        }
+
+        if (! $zeroDowntime && $releases) {
+            return 'deploy.sh uses $CREATE_RELEASE() / $ACTIVATE_RELEASE() but the site does not use zero-downtime deployments, set "zero_downtime": true or use a regular deploy script.';
+        }
+
+        return null;
     }
 
     protected function syncCertificate(int $serverId, ?Site $site, bool $created, array $blueprint, string $role, Plan $plan, string $label): void
@@ -363,8 +419,11 @@ class SyncSite
         });
     }
 
+    /**
+     * The site's scheduler, run from the site's directory or its current release.
+     */
     public static function isSchedulerFor(?string $command, string $domain): bool
     {
-        return Str::contains((string) $command, "/{$domain}/artisan schedule:run");
+        return (bool) preg_match('#/'.preg_quote($domain, '#').'(?:/current)?/artisan schedule:run#', (string) $command);
     }
 }
